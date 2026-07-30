@@ -203,16 +203,14 @@
       </div>
       <div class="field row">
         <input id="allowRotation" type="checkbox" />
-        <label style="margin:0">允许 90° 旋转（更高填充率）</label>
-        <span class="hint">开启后子图在图集中按 <b>顺时针 90°</b> 存放（Skia RotateDegrees(90)），解析库 KAtlasTool 已据此正确还原 UV。</span>
+        <label style="margin:0">允许 90° 顺时针 旋转（更高填充率）</label>
       </div>
       <div class="field">
-        <label>图集名字（前缀）</label>
+        <label>图集名字</label>
         <input id="atlasName" type="text" placeholder="留空则默认用输出文件夹名" />
-        <small style="color:#8a93a6;display:block;margin-top:2px">用于导出文件前缀：{名字}_0.png、{名字}.atlas.json（JSON 通用）、{名字}.atlas（libGDX 文本）</small>
       </div>
       <div class="field">
-        <label>预览最大边长 (px)</label>
+        <label>图集最大边长 (px)</label>
         <input id="previewMax" type="number" value="512" min="64" step="64" />
         <small style="color:#8a93a6;display:block;margin-top:2px">超过此边长的图集会切成多页预览（值越小页越多）</small>
       </div>
