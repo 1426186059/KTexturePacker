@@ -1,0 +1,637 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>KTexturePacker · 图集打包</title>
+  <style>
+    :root {
+      --bg: #0f1115;
+      --panel: #181b22;
+      --panel-2: #20242e;
+      --accent: #5b8cff;
+      --accent-2: #3f6fe0;
+      --text: #e8eaf0;
+      --muted: #9aa3b2;
+      --border: #2a2f3a;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+    header {
+      padding: 18px 24px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: baseline;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    header h1 { font-size: 18px; margin: 0; }
+    header span { color: var(--muted); font-size: 13px; }
+    .modeToggle { margin-left: auto; display: flex; gap: 6px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 3px; }
+    .modeToggle button {
+      border: none; background: transparent; color: var(--muted);
+      padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 13px;
+    }
+    .modeToggle button.active { background: var(--accent); color: #fff; }
+    .modeToggle button:disabled { opacity: .35; cursor: not-allowed; }
+
+    /* 顶部输入区 */
+    .topbar { padding: 16px 24px; border-bottom: 1px solid var(--border); background: var(--panel); }
+    .topbar-inner { max-width: 1280px; margin: 0 auto; }
+    .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+    @media (max-width: 760px) { .field-row { grid-template-columns: 1fr; } }
+    .pathfield label { display: block; font-size: 13px; margin-bottom: 6px; color: var(--muted); }
+    .pathfield .inputwrap { display: flex; gap: 8px; }
+    .pathfield input {
+      flex: 1; width: 100%;
+      background: var(--panel-2); border: 1px solid var(--border); color: var(--text);
+      border-radius: 8px; padding: 9px 10px; font-size: 14px;
+    }
+    .pathfield input.dropover { border-color: var(--accent); background: #232a3a; }
+    .browseBtn {
+      border: 1px solid var(--border); background: var(--panel-2); color: var(--text);
+      border-radius: 8px; padding: 8px 14px; font-size: 13px; cursor: pointer; white-space: nowrap;
+    }
+    .browseBtn:hover { background: #2a3040; }
+
+    .dropzone {
+      border: 2px dashed var(--border); border-radius: 12px; padding: 26px 18px;
+      text-align: center; cursor: pointer; transition: border-color .15s, background .15s; margin-top: 4px;
+    }
+    .dropzone:hover { border-color: var(--accent); }
+    .dropzone.dropover { border-color: var(--accent); background: #232a3a; }
+    .dropzone .big { font-size: 15px; }
+    .dropzone .sub { color: var(--muted); font-size: 12px; margin-top: 6px; }
+    .dz-actions { margin-top: 14px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+
+    .filelist { margin-top: 12px; font-size: 13px; color: var(--muted); }
+    .filelist .summary { color: var(--text); margin-bottom: 6px; }
+    .filelist .names {
+      max-height: 120px; overflow-y: auto; background: var(--panel-2); border: 1px solid var(--border);
+      border-radius: 8px; padding: 8px 10px; line-height: 1.7; word-break: break-all;
+    }
+    .filelist .names span + span::before { content: "、"; color: var(--muted); }
+
+    .wrap { display: grid; grid-template-columns: 380px 1fr; gap: 18px; padding: 18px 24px; align-items: start; max-width: 1280px; margin: 0 auto; }
+    @media (max-width: 760px) { .wrap { grid-template-columns: 1fr; } }
+    .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 16px; }
+    .panel h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 12px; }
+    .field { margin-bottom: 14px; }
+    .field label { display: block; font-size: 13px; margin-bottom: 6px; color: var(--muted); }
+    .field input[type=number], .field select {
+      width: 100%; background: var(--panel-2); border: 1px solid var(--border); color: var(--text);
+      border-radius: 8px; padding: 8px 10px; font-size: 14px;
+    }
+    .row { display: flex; align-items: center; gap: 8px; }
+    .row input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--accent); }
+    .btn {
+      width: 100%; border: none; border-radius: 8px; padding: 11px 14px; font-size: 14px; font-weight: 600;
+      cursor: pointer; background: var(--accent); color: #fff;
+    }
+    .btn:hover { background: var(--accent-2); }
+    .btn:disabled { background: #2a2f3a; color: var(--muted); cursor: not-allowed; }
+    .btn.secondary { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); }
+    .btn.secondary:hover { background: #2a3040; }
+    .status { margin-top: 12px; font-size: 13px; color: var(--muted); min-height: 18px; white-space: pre-wrap; word-break: break-all; }
+    .status.ok { color: #7bdc8b; }
+    .status.err { color: #ff7b7b; }
+    .preview {
+      background:
+        linear-gradient(45deg, #15171d 25%, transparent 25%) 0 0/20px 20px,
+        linear-gradient(-45deg, #15171d 25%, transparent 25%) 0 0/20px 20px,
+        linear-gradient(45deg, transparent 75%, #15171d 75%) 0 0/20px 20px,
+        linear-gradient(-45deg, transparent 75%, #15171d 75%) 0 0/20px 20px,
+        var(--panel);
+      border: 1px solid var(--border); border-radius: 12px; min-height: 360px;
+      display: flex; align-items: flex-start; justify-content: flex-start; flex-wrap: wrap;
+      gap: 14px; padding: 16px; overflow: auto;
+    }
+    .preview img { max-width: 100%; image-rendering: pixelated; }
+    .preview .empty { color: var(--muted); font-size: 14px; text-align: center; padding: 20px; }
+    .preview .page { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; background: var(--panel); display: flex; flex-direction: column; }
+    .preview .pagecap { font-size: 12px; color: var(--muted); padding: 6px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+    .preview .page img { display: block; max-width: 512px; }
+    .meta { margin-top: 12px; font-size: 13px; color: var(--muted); }
+    .meta b { color: var(--text); }
+    .hintline { color: var(--muted); font-size: 12px; margin-top: 8px; }
+    .field.row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+    .hint { display: block; width: 100%; color: var(--muted); font-size: 12px; margin-top: 2px; }
+    .hint b { color: var(--text); }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>KTexturePacker</h1>
+    <span>图集打包 · 基于 ASP.NET Core + MaxRects</span>
+    <div class="modeToggle">
+      <button id="modeLocal" class="active" type="button">本地模式</button>
+      <button id="modeRemote" type="button">远程模式</button>
+    </div>
+  </header>
+
+  <!-- 顶部输入区 -->
+  <div class="topbar">
+    <div class="topbar-inner">
+      <!-- 本地模式：输入/输出文件夹 -->
+      <div id="localPanel">
+        <div class="field-row">
+          <div class="pathfield">
+            <label>输入文件夹</label>
+            <div class="inputwrap">
+              <input id="inputFolder" type="text" placeholder="如 D:\textures\in" />
+              <button class="browseBtn" id="browseInput" type="button">浏览…</button>
+            </div>
+          </div>
+          <div class="pathfield">
+            <label>输出文件夹</label>
+            <div class="inputwrap">
+              <input id="outputFolder" type="text" placeholder="留空则与输入文件夹相同" />
+              <button class="browseBtn" id="browseOutput" type="button">浏览…</button>
+            </div>
+          </div>
+        </div>
+        <div class="hintline">本地模式适用于浏览器与服务器在同一台机器；路径是服务器（本机）磁盘路径。可直接把文件夹拖到输入框自动识别。</div>
+      </div>
+
+      <!-- 远程模式：上传图片/文件夹 -->
+      <div id="remotePanel" style="display:none">
+        <div id="dropzone" class="dropzone">
+          <div class="big">把图片或文件夹拖到这里</div>
+          <div class="sub">支持递归读取整个文件夹里的图片（png/jpg/gif/bmp/webp/tga）</div>
+          <div class="dz-actions">
+            <button type="button" class="browseBtn" id="pickFiles">选择图片文件</button>
+            <button type="button" class="browseBtn" id="pickFolder">选择文件夹</button>
+            <button type="button" class="browseBtn" id="clearFiles">清空</button>
+          </div>
+          <input id="filesInput" type="file" accept="image/png,image/jpeg,image/gif,image/webp,image/bmp" multiple hidden />
+          <input id="folderInput" type="file" webkitdirectory multiple hidden />
+        </div>
+        <div class="filelist" id="filelist" style="display:none">
+          <div class="summary" id="fileSummary"></div>
+          <div class="names" id="fileNames"></div>
+        </div>
+        <div class="hintline">远程模式适用於服务器在远端：图片会先上传到服务器再打包，不依赖本机路径。</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="wrap">
+    <div class="panel">
+      <h2>参数</h2>
+      <div class="field">
+        <label>最大边长 (px)</label>
+        <input id="maxSize" type="number" value="2048" min="64" step="64" />
+      </div>
+      <div class="field">
+        <label>留白 (px)</label>
+        <input id="padding" type="number" value="1" min="0" step="1" />
+      </div>
+      <div class="field">
+        <label>算法</label>
+        <select id="algorithm">
+          <option value="best">Best Short Side Fit</option>
+          <option value="long">Best Long Side Fit</option>
+          <option value="bottomleft">Bottom-Left</option>
+          <option value="contact">Contact Point</option>
+        </select>
+      </div>
+      <div class="field row">
+        <input id="allowRotation" type="checkbox" />
+        <label style="margin:0">允许 90° 顺时针 旋转（更高填充率）</label>
+      </div>
+      <div class="field">
+        <label>图集名字</label>
+        <input id="atlasName" type="text" placeholder="留空则默认用输出文件夹名" />
+      </div>
+      <div class="field">
+        <label>图集最大边长 (px)</label>
+        <input id="previewMax" type="number" value="512" min="64" step="64" />
+        <small style="color:#8a93a6;display:block;margin-top:2px">超过此边长的图集会切成多页预览（值越小页越多）</small>
+      </div>
+
+      <button id="packBtn" class="btn">打包</button>
+      <button id="previewBtn" class="btn secondary" style="margin-top:8px">预览图集</button>
+      <button id="resetBtn" class="btn secondary" style="margin-top:8px">重置</button>
+      <div id="status" class="status"></div>
+    </div>
+
+    <div>
+      <div class="panel" style="padding:14px">
+        <div class="preview" id="preview"><span class="empty">设置好输入后点击「预览图集」查看效果</span></div>
+        <div class="meta" id="meta"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 文件夹选择器 -->
+  <div id="picker" class="picker" style="display:none">
+    <div class="picker-box">
+      <div class="picker-head">
+        <span id="pickerTitle">选择文件夹</span>
+        <button type="button" id="pickerClose" class="browseBtn">关闭</button>
+      </div>
+      <div class="picker-bar">
+        <button type="button" id="pickerUp" class="browseBtn">上一级</button>
+        <span id="pickerPath" class="picker-path"></span>
+      </div>
+      <div id="pickerList" class="picker-list"></div>
+      <div class="picker-foot">
+        <button type="button" id="pickerSelect" class="btn" style="width:auto;padding:8px 18px">选择此文件夹</button>
+      </div>
+    </div>
+  </div>
+
+  <style>
+    .picker { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: flex; align-items: center; justify-content: center; z-index: 50; }
+    .picker-box { width: min(640px, 92vw); max-height: 80vh; background: var(--panel); border: 1px solid var(--border); border-radius: 12px; display: flex; flex-direction: column; }
+    .picker-head { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--border); }
+    .picker-bar { display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-bottom: 1px solid var(--border); }
+    .picker-path { color: var(--muted); font-size: 13px; word-break: break-all; }
+    .picker-list { overflow-y: auto; padding: 8px; flex: 1; min-height: 200px; }
+    .picker-item { padding: 9px 12px; border-radius: 8px; cursor: pointer; font-size: 14px; }
+    .picker-item:hover { background: var(--panel-2); }
+    .picker-foot { padding: 12px 16px; border-top: 1px solid var(--border); text-align: right; }
+  </style>
+
+  <script>
+    let mode = 'local';
+
+    const packBtn = document.getElementById('packBtn');
+    const previewBtn = document.getElementById('previewBtn');
+    const statusEl = document.getElementById('status');
+    const preview = document.getElementById('preview');
+    const meta = document.getElementById('meta');
+
+    function status(msg, cls) { statusEl.textContent = msg; statusEl.className = 'status' + (cls ? ' ' + cls : ''); }
+    function algoLabel() {
+      return ({ best: 'Best Short Side Fit', long: 'Best Long Side Fit', bottomleft: 'Bottom-Left', contact: 'Contact Point' })[document.getElementById('algorithm').value] || '';
+    }
+    function getParams() {
+      return {
+        maxSize: document.getElementById('maxSize').value,
+        padding: document.getElementById('padding').value,
+        algorithm: document.getElementById('algorithm').value,
+        allowRotation: document.getElementById('allowRotation').checked,
+        atlasName: document.getElementById('atlasName').value.trim(),
+      };
+    }
+
+    async function showPreview(res) {
+      const j = await res.json();
+      const pages = j.pages || [];
+      const count = j.count || pages.length;
+      preview.innerHTML = '';
+      if (!pages.length) {
+        preview.innerHTML = '<span class="empty">无预览</span>';
+      } else {
+        pages.forEach((pg, i) => {
+          const wrap = document.createElement('div');
+          wrap.className = 'page';
+          const cap = document.createElement('div');
+          cap.className = 'pagecap';
+          cap.textContent = '第 ' + (i + 1) + ' / ' + count + ' 预览页  (' + pg.w + '×' + pg.h + ')';
+          const img = document.createElement('img');
+          img.src = 'data:image/png;base64,' + pg.png;
+          wrap.appendChild(cap);
+          wrap.appendChild(img);
+          preview.appendChild(wrap);
+        });
+      }
+      const w = res.headers.get('X-Atlas-Width');
+      const h = res.headers.get('X-Atlas-Height');
+      const sc = res.headers.get('X-Sprite-Count');
+      const pagesH = parseInt(res.headers.get('X-Page-Count') || count, 10);
+      const uc = parseInt(res.headers.get('X-Unplaced-Count') || '0', 10);
+      let txt = '图集首页 <b>' + w + '×' + h + '</b> · 已放置 <b>' + sc + '</b> 张';
+      if (pagesH > 1) txt += ' · 共 <b>' + pagesH + '</b> 个图集页';
+      if (uc > 0) txt += ' · <span style="color:#ffb86b">' + uc + ' 张放不下（调大最大边长或允许旋转）</span>';
+      txt += '<br/>算法：' + algoLabel();
+      const an = res.headers.get('X-Atlas-Name');
+      if (an) txt += '<br/>导出前缀：<b>' + an + '</b>';
+      meta.innerHTML = txt;
+    }
+
+    // ===== 模式切换 =====
+    function setMode(m) {
+      mode = m;
+      document.getElementById('modeLocal').classList.toggle('active', m === 'local');
+      document.getElementById('modeRemote').classList.toggle('active', m === 'remote');
+      document.getElementById('localPanel').style.display = m === 'local' ? '' : 'none';
+      document.getElementById('remotePanel').style.display = m === 'remote' ? '' : 'none';
+      status('', '');
+    }
+    document.getElementById('modeLocal').onclick = () => setMode('local');
+    document.getElementById('modeRemote').onclick = () => setMode('remote');
+
+    // ===== 本地模式：文件夹选择 + 拖拽识别目录 =====
+    function baseName(p) {
+      const norm = p.replace(/\\/g, '/');
+      const i = norm.lastIndexOf('/');
+      if (i >= 0 && i < p.length - 1) return p.slice(i + 1);
+      return p;
+    }
+    function normalizeNativePath(p) {
+      if (p.startsWith('/') && /^[A-Za-z]:/.test(p.slice(1))) return p.slice(1);
+      return p;
+    }
+    function pathDir(p) {
+      const i = Math.max(p.lastIndexOf('/'), p.lastIndexOf('\\'));
+      return i > 0 ? p.slice(0, i) : p;
+    }
+    function isCompletePath(p) {
+      if (!p) return false;
+      return /^[A-Za-z]:[\\/]/.test(p) || /^\\\\/.test(p);
+    }
+
+    [['inputFolder', 'browseInput'], ['outputFolder', 'browseOutput']].forEach(([inp, btn]) => {
+      const inputEl = document.getElementById(inp);
+      bindDropFolder(inputEl);
+      document.getElementById(btn).onclick = () => openPicker(inputEl);
+    });
+
+    function bindDropFolder(inputEl) {
+      inputEl.addEventListener('dragover', e => { e.preventDefault(); inputEl.classList.add('dropover'); });
+      inputEl.addEventListener('dragleave', e => { e.preventDefault(); inputEl.classList.remove('dropover'); });
+      inputEl.addEventListener('drop', e => {
+        e.preventDefault();
+        inputEl.classList.remove('dropover');
+        const files = e.dataTransfer.files;
+        const items = e.dataTransfer.items;
+        let dirPath = '';
+        let rawDetail = '';
+        if (files && files.length && files[0].path) {
+          const d = pathDir(files[0].path);
+          if (isCompletePath(d)) dirPath = d; else rawDetail = files[0].path;
+        }
+        if (!dirPath && items && items.length && items[0].webkitGetAsEntry) {
+          const en = items[0].webkitGetAsEntry();
+          if (en && en.fullPath) {
+            const d = pathDir(normalizeNativePath(en.fullPath));
+            if (isCompletePath(d)) dirPath = d; else if (!rawDetail) rawDetail = en.fullPath;
+          }
+        }
+        if (dirPath) { inputEl.value = dirPath; status('', ''); }
+        else {
+          const got = rawDetail ? '（得到的是不完整路径：' + rawDetail + '）' : '（浏览器出于安全限制不提供完整本地路径）';
+          status('拖拽无法获取完整文件夹路径' + got + '\n已打开文件夹选择器，请从中选择。', '');
+          openPicker(inputEl);
+        }
+      });
+    }
+
+    // 文件夹选择器（服务器端目录浏览）
+    let pickerTarget = null;
+    let pickerCurrent = '';
+    const picker = document.getElementById('picker');
+    document.getElementById('pickerClose').onclick = () => picker.style.display = 'none';
+    document.getElementById('pickerSelect').onclick = () => {
+      if (pickerTarget) pickerTarget.value = pickerCurrent || '';
+      picker.style.display = 'none';
+    };
+    document.getElementById('pickerUp').onclick = () => loadDirs(pickerParent);
+    let pickerParent = '';
+    async function loadDirs(path) {
+      const res = await fetch('/api/dirs?path=' + encodeURIComponent(path || ''));
+      if (!res.ok) { status('读取目录失败: ' + (await res.text()), 'err'); return; }
+      const data = await res.json();
+      pickerCurrent = data.current;
+      pickerParent = data.parent;
+      document.getElementById('pickerPath').textContent = pickerCurrent || '（计算机根目录）';
+      const list = document.getElementById('pickerList');
+      list.innerHTML = '';
+      (data.dirs || []).forEach(d => {
+        const div = document.createElement('div');
+        div.className = 'picker-item';
+        div.textContent = baseName(d) || d;
+        div.onclick = () => loadDirs(d);
+        list.appendChild(div);
+      });
+      picker.style.display = 'flex';
+    }
+    function openPicker(inputEl) {
+      pickerTarget = inputEl;
+      loadDirs(pickerCurrent || '');
+    }
+
+    // ===== 远程模式：上传 =====
+    const dropzone = document.getElementById('dropzone');
+    const filesInput = document.getElementById('filesInput');
+    const folderInput = document.getElementById('folderInput');
+    const filelist = document.getElementById('filelist');
+    const fileSummary = document.getElementById('fileSummary');
+    const fileNames = document.getElementById('fileNames');
+    let selectedFiles = [];
+    const fileKeys = new Set();
+
+    function isImageFile(name) { return /\.(png|jpe?g|gif|bmp|webp|tga)$/i.test(name); }
+    function formatBytes(n) {
+      if (n < 1024) return n + ' B';
+      if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+      return (n / 1024 / 1024).toFixed(1) + ' MB';
+    }
+    function addFiles(list) {
+      let added = 0;
+      for (const f of list) {
+        const key = f.name + '|' + f.size;
+        if (fileKeys.has(key)) continue;
+        fileKeys.add(key); selectedFiles.push(f); added++;
+      }
+      if (added) renderFileList();
+      refreshButtons();
+    }
+    function renderFileList() {
+      const total = selectedFiles.reduce((a, f) => a + f.size, 0);
+      fileSummary.textContent = '已选择 ' + selectedFiles.length + ' 张图片 · 共 ' + formatBytes(total);
+      fileNames.innerHTML = '';
+      selectedFiles.slice(0, 60).forEach(f => {
+        const s = document.createElement('span'); s.textContent = f.name; fileNames.appendChild(s);
+      });
+      if (selectedFiles.length > 60) {
+        const s = document.createElement('span'); s.textContent = '…等 ' + selectedFiles.length + ' 张'; fileNames.appendChild(s);
+      }
+      filelist.style.display = selectedFiles.length ? 'block' : 'none';
+    }
+    async function readEntry(entry, out) {
+      if (entry.isFile) { await new Promise(res => entry.file(f => { if (f && isImageFile(f.name)) out.push(f); res(); })); }
+      else if (entry.isDirectory) {
+        const reader = entry.createReader();
+        let batch;
+        do { batch = await new Promise(res => reader.readEntries(res)); for (const e of batch) await readEntry(e, out); } while (batch.length > 0);
+      }
+    }
+    dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('dropover'); });
+    dropzone.addEventListener('dragleave', e => { e.preventDefault(); dropzone.classList.remove('dropover'); });
+    dropzone.addEventListener('drop', async e => {
+      e.preventDefault(); dropzone.classList.remove('dropover');
+      const items = e.dataTransfer.items; const collected = [];
+      if (items && items.length && items[0].webkitGetAsEntry) {
+        const entries = [];
+        for (const it of items) { const en = it.webkitGetAsEntry(); if (en) entries.push(en); }
+        for (const en of entries) await readEntry(en, collected);
+      } else if (e.dataTransfer.files && e.dataTransfer.files.length) {
+        for (const f of e.dataTransfer.files) if (isImageFile(f.name)) collected.push(f);
+      }
+      if (collected.length) addFiles(collected); else status('拖入的内容里没有图片文件。', 'err');
+    });
+    dropzone.addEventListener('click', e => {
+      if (e.target === dropzone || e.target.classList.contains('big') || e.target.classList.contains('sub')) filesInput.click();
+    });
+    document.getElementById('pickFiles').onclick = e => { e.stopPropagation(); filesInput.click(); };
+    document.getElementById('pickFolder').onclick = e => { e.stopPropagation(); folderInput.click(); };
+    document.getElementById('clearFiles').onclick = e => {
+      e.stopPropagation(); selectedFiles = []; fileKeys.clear(); renderFileList(); refreshButtons(); status('', '');
+    };
+    filesInput.onchange = () => { addFiles(Array.from(filesInput.files).filter(f => isImageFile(f.name))); filesInput.value = ''; };
+    folderInput.onchange = () => { addFiles(Array.from(folderInput.files).filter(f => isImageFile(f.name))); folderInput.value = ''; };
+
+    // 阻止拖到页面其它位置时浏览器直接打开图片文件（拖到放置区外也不会跳转离开页面）
+    window.addEventListener('dragover', e => e.preventDefault());
+    window.addEventListener('drop', e => e.preventDefault());
+
+    function refreshButtons() {
+      const ready = mode === 'local'
+        ? document.getElementById('inputFolder').value.trim().length > 0
+        : selectedFiles.length > 0;
+      packBtn.disabled = !ready;
+      previewBtn.disabled = !ready;
+    }
+
+    // 重置：清空路径/已选文件/参数/预览/状态，恢复到默认
+    const resetBtn = document.getElementById('resetBtn');
+    function resetAll() {
+      document.getElementById('inputFolder').value = '';
+      document.getElementById('outputFolder').value = '';
+      selectedFiles = []; fileKeys.clear(); renderFileList();
+      document.getElementById('maxSize').value = 2048;
+      document.getElementById('padding').value = 1;
+      document.getElementById('algorithm').value = 'best';
+      document.getElementById('allowRotation').checked = false;
+      document.getElementById('previewMax').value = 512;
+      document.getElementById('atlasName').value = '';
+      preview.innerHTML = '<span class="empty">设置好输入后点击「预览图集」查看效果</span>';
+      meta.innerHTML = '';
+      status('', '');
+      refreshButtons();
+    }
+    resetBtn.onclick = resetAll;
+    ['inputFolder', 'outputFolder'].forEach(id => document.getElementById(id).addEventListener('input', refreshButtons));
+
+    // ===== 预览 / 打包 =====
+    async function doPreview(silent) {
+      if (mode === 'local') {
+        const inp = document.getElementById('inputFolder').value.trim();
+        if (!inp) return;
+        if (!silent) { previewBtn.disabled = true; status('预览生成中…', ''); }
+        try {
+          const p = new URLSearchParams({ inputFolder: inp, outputFolder: document.getElementById('outputFolder').value.trim(),
+            maxSize: document.getElementById('maxSize').value, padding: document.getElementById('padding').value,
+            algorithm: document.getElementById('algorithm').value, allowRotation: document.getElementById('allowRotation').checked,
+            atlasName: document.getElementById('atlasName').value.trim(),
+            previewMax: document.getElementById('previewMax').value });
+          p.append('_', Date.now().toString());
+          const res = await fetch('/api/preview-local?' + p.toString());
+          if (!res.ok) { if (!silent) status('预览失败：' + (await res.text()), 'err'); return; }
+          showPreview(res);
+          if (!silent) status('预览已生成（未写入磁盘）。', 'ok');
+        } catch (e) { if (!silent) status('错误：' + e.message, 'err'); }
+        finally { if (!silent) previewBtn.disabled = false; }
+      } else {
+        if (!selectedFiles.length) return;
+        if (!silent) { previewBtn.disabled = true; status('预览生成中…', ''); }
+        try {
+          const fd = buildForm();
+          fd.append('previewMax', document.getElementById('previewMax').value);
+          fd.append('_', Date.now().toString());
+          const res = await fetch('/api/preview', { method: 'POST', body: fd });
+          if (!res.ok) { if (!silent) status('预览失败：' + (await res.text() || res.status), 'err'); return; }
+          showPreview(res);
+          if (!silent) status('预览已生成（未下载）。', 'ok');
+        } catch (e) { if (!silent) status('错误：' + e.message, 'err'); }
+        finally { if (!silent) previewBtn.disabled = false; }
+      }
+    }
+
+    previewBtn.onclick = doPreview;
+    document.getElementById('algorithm').addEventListener('change', () => {
+      if (mode === 'local' ? document.getElementById('inputFolder').value.trim() : selectedFiles.length) doPreview();
+    });
+
+    packBtn.onclick = async () => {
+      if (mode === 'local') {
+        const inp = document.getElementById('inputFolder').value.trim();
+        const out = document.getElementById('outputFolder').value.trim();
+        if (!inp) return;
+        if (!out) { status('本地模式请填写输出文件夹。', 'err'); return; }
+        packBtn.disabled = true; status('打包中…', '');
+        try {
+          const p = new URLSearchParams({ inputFolder: inp, outputFolder: out, maxSize: document.getElementById('maxSize').value,
+            padding: document.getElementById('padding').value, algorithm: document.getElementById('algorithm').value,
+            allowRotation: document.getElementById('allowRotation').checked,
+            atlasName: document.getElementById('atlasName').value.trim() });
+          const res = await fetch('/api/pack-local?' + p.toString());
+          const txt = await res.text();
+          if (!res.ok) status('失败: ' + txt, 'err');
+          else { status('完成，已写入磁盘。\n' + txt, 'ok'); doPreview(true); }
+        } catch (e) { status('错误: ' + e.message, 'err'); }
+        finally { packBtn.disabled = false; }
+      } else {
+        if (!selectedFiles.length) return;
+        packBtn.disabled = true; status('打包中…', '');
+        try {
+          const an = getParams().atlasName;
+          const res = await fetch('/api/pack', { method: 'POST', body: buildForm() });
+          if (!res.ok) { status('失败: ' + (await res.text() || res.status), 'err'); return; }
+          const blob = await res.blob();
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a'); a.href = url;
+          a.download = an ? an + '.zip' : 'atlas.zip';
+          document.body.appendChild(a); a.click(); a.remove();
+          const base = an || 'atlas';
+          status('完成，已下载 ' + base + '.zip（含 ' + base + '_0.png…、' + base + '.atlas.json（JSON）与 ' + base + '.atlas（libGDX），多页自动分图）。', 'ok');
+          doPreview(true);
+        } catch (e) { status('错误: ' + e.message, 'err'); }
+        finally { packBtn.disabled = false; }
+      }
+    };
+
+    function buildForm() {
+      const fd = new FormData();
+      for (const f of selectedFiles) fd.append('files', f, f.name);
+      const p = getParams();
+      fd.append('maxSize', p.maxSize); fd.append('padding', p.padding);
+      fd.append('algorithm', p.algorithm); fd.append('allowRotation', p.allowRotation);
+      fd.append('atlasName', p.atlasName);
+      return fd;
+    }
+
+    // 自动判定模式：服务器是否和浏览器同机。
+    // 本地模式需要服务器按磁盘路径读盘，仅当服务本机（localhost/回环）才有意义。
+    const modeLocalBtn = document.getElementById('modeLocal');
+    (async () => {
+      try {
+        const r = await fetch('/api/mode');
+        if (!r.ok) return;
+        const j = await r.json();
+        if (j.local) {
+          setMode('local');
+          modeLocalBtn.disabled = false;
+        } else {
+          setMode('remote');           // 远程：强制上传模式
+          modeLocalBtn.disabled = true; // 禁用本地模式（服务器在别处，读不到你的磁盘）
+          modeLocalBtn.title = '本地模式需要服务运行在本机（通过 localhost 访问）';
+        }
+      } catch {
+        // 检测失败则保留默认（本地）模式，用户可手动切换
+      }
+    })();
+
+    refreshButtons();
+  </script>
+</body>
+</html>
