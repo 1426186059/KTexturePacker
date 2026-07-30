@@ -328,9 +328,11 @@ static string WriteAtlasToDisk(List<PackingResult> pages, List<MemoryStream> png
         var pngPath = Path.Combine(outputFolder, imgName);
         using (var fs = File.OpenWrite(pngPath)) { pngs[i].Position = 0; pngs[i].CopyTo(fs); }
     }
-    var desc = AtlasExporter.ToAtlas(pages, imageNames);
+    var desc = AtlasExporter.ToJson(pages, imageNames);
     string descPath = Path.Combine(outputFolder, atlasName + ".atlas.json");
     File.WriteAllText(descPath, desc);
+    // libGDX 文本格式（兼容游戏引擎），同时保留。
+    File.WriteAllText(Path.Combine(outputFolder, atlasName + ".atlas"), AtlasExporter.ToAtlas(pages, imageNames));
     return descPath;
 }
 
@@ -339,7 +341,8 @@ static (MemoryStream zip, string fileName) ZipAtlas(List<PackingResult> pages, L
 {
     var imageNames = new List<string>();
     for (int i = 0; i < pages.Count; i++) imageNames.Add(atlasName + "_" + i + ".png");
-    var desc = AtlasExporter.ToAtlas(pages, imageNames);
+    var desc = AtlasExporter.ToJson(pages, imageNames);
+    var libgdx = AtlasExporter.ToAtlas(pages, imageNames);
 
     var zip = new MemoryStream();
     using (var archive = new ZipArchive(zip, ZipArchiveMode.Create, true))
@@ -355,6 +358,10 @@ static (MemoryStream zip, string fileName) ZipAtlas(List<PackingResult> pages, L
         using (var zs = descEntry.Open())
         using (var w = new StreamWriter(zs))
             w.Write(desc);
+        var atlasEntry = archive.CreateEntry(atlasName + ".atlas");
+        using (var zs = atlasEntry.Open())
+        using (var w = new StreamWriter(zs))
+            w.Write(libgdx);
     }
     zip.Position = 0;
     return (zip, atlasName + ".zip");

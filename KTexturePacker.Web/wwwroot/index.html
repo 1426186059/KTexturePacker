@@ -205,7 +205,7 @@
       <div class="field">
         <label>图集名字（前缀）</label>
         <input id="atlasName" type="text" placeholder="留空则默认用输出文件夹名" />
-        <small style="color:#8a93a6;display:block;margin-top:2px">用于导出文件前缀：{名字}_0.png、{名字}.atlas.json</small>
+        <small style="color:#8a93a6;display:block;margin-top:2px">用于导出文件前缀：{名字}_0.png、{名字}.atlas.json（JSON 通用）、{名字}.atlas（libGDX 文本）</small>
       </div>
       <div class="field">
         <label>预览最大边长 (px)</label>
@@ -521,11 +521,11 @@
     ['inputFolder', 'outputFolder'].forEach(id => document.getElementById(id).addEventListener('input', refreshButtons));
 
     // ===== 预览 / 打包 =====
-    async function doPreview() {
+    async function doPreview(silent) {
       if (mode === 'local') {
         const inp = document.getElementById('inputFolder').value.trim();
         if (!inp) return;
-        previewBtn.disabled = true; status('预览生成中…', '');
+        if (!silent) { previewBtn.disabled = true; status('预览生成中…', ''); }
         try {
           const p = new URLSearchParams({ inputFolder: inp, outputFolder: document.getElementById('outputFolder').value.trim(),
             maxSize: document.getElementById('maxSize').value, padding: document.getElementById('padding').value,
@@ -534,24 +534,24 @@
             previewMax: document.getElementById('previewMax').value });
           p.append('_', Date.now().toString());
           const res = await fetch('/api/preview-local?' + p.toString());
-          if (!res.ok) { status('预览失败：' + (await res.text()), 'err'); return; }
+          if (!res.ok) { if (!silent) status('预览失败：' + (await res.text()), 'err'); return; }
           showPreview(res);
-          status('预览已生成（未写入磁盘）。', 'ok');
-        } catch (e) { status('错误：' + e.message, 'err'); }
-        finally { previewBtn.disabled = false; }
+          if (!silent) status('预览已生成（未写入磁盘）。', 'ok');
+        } catch (e) { if (!silent) status('错误：' + e.message, 'err'); }
+        finally { if (!silent) previewBtn.disabled = false; }
       } else {
         if (!selectedFiles.length) return;
-        previewBtn.disabled = true; status('预览生成中…', '');
+        if (!silent) { previewBtn.disabled = true; status('预览生成中…', ''); }
         try {
           const fd = buildForm();
           fd.append('previewMax', document.getElementById('previewMax').value);
           fd.append('_', Date.now().toString());
           const res = await fetch('/api/preview', { method: 'POST', body: fd });
-          if (!res.ok) { status('预览失败：' + (await res.text() || res.status), 'err'); return; }
+          if (!res.ok) { if (!silent) status('预览失败：' + (await res.text() || res.status), 'err'); return; }
           showPreview(res);
-          status('预览已生成（未下载）。', 'ok');
-        } catch (e) { status('错误：' + e.message, 'err'); }
-        finally { previewBtn.disabled = false; }
+          if (!silent) status('预览已生成（未下载）。', 'ok');
+        } catch (e) { if (!silent) status('错误：' + e.message, 'err'); }
+        finally { if (!silent) previewBtn.disabled = false; }
       }
     }
 
@@ -575,7 +575,7 @@
           const res = await fetch('/api/pack-local?' + p.toString());
           const txt = await res.text();
           if (!res.ok) status('失败: ' + txt, 'err');
-          else { status('完成。\n' + txt, 'ok'); doPreview(); }
+          else { status('完成，已写入磁盘。\n' + txt, 'ok'); doPreview(true); }
         } catch (e) { status('错误: ' + e.message, 'err'); }
         finally { packBtn.disabled = false; }
       } else {
@@ -591,8 +591,8 @@
           a.download = an ? an + '.zip' : 'atlas.zip';
           document.body.appendChild(a); a.click(); a.remove();
           const base = an || 'atlas';
-          status('完成，已下载 ' + base + '.zip（含 ' + base + '_0.png… 与单一 ' + base + '.atlas.json，多页自动分图）。', 'ok');
-          doPreview();
+          status('完成，已下载 ' + base + '.zip（含 ' + base + '_0.png…、' + base + '.atlas.json（JSON）与 ' + base + '.atlas（libGDX），多页自动分图）。', 'ok');
+          doPreview(true);
         } catch (e) { status('错误: ' + e.message, 'err'); }
         finally { packBtn.disabled = false; }
       }

@@ -1,5 +1,7 @@
 using System.Collections.Generic;
 using System.Text;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace KTexturePacker.Core;
 
@@ -39,5 +41,45 @@ public static class AtlasExporter
                 sb.AppendLine();
         }
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// 生成合法 JSON 通用格式（单文件含所有 page 与每页精灵帧信息）。
+    /// 使用 JsonNode 构建，避免 AOT 下的反射（IL3050/IL2026）。
+    /// 结构：{ pages: [ { image, width, height, regions: [ { name, x, y, w, h, rotated, sourceW, sourceH } ] } ] }
+    /// </summary>
+    public static string ToJson(IReadOnlyList<PackingResult> pages, IReadOnlyList<string> imageNames)
+    {
+        var pagesArr = new JsonArray();
+        for (int i = 0; i < pages.Count; i++)
+        {
+            var result = pages[i];
+            var pageObj = new JsonObject
+            {
+                ["image"] = imageNames[i],
+                ["width"] = result.AtlasWidth,
+                ["height"] = result.AtlasHeight,
+            };
+            var regions = new JsonArray();
+            foreach (var p in result.Sprites)
+            {
+                var region = new JsonObject
+                {
+                    ["name"] = p.Name,
+                    ["x"] = p.X,
+                    ["y"] = p.Y,
+                    ["w"] = p.Width,
+                    ["h"] = p.Height,
+                    ["rotated"] = p.Rotated,
+                    ["sourceW"] = p.SourceWidth,
+                    ["sourceH"] = p.SourceHeight,
+                };
+                regions.Add((JsonNode)region);
+            }
+            pageObj["regions"] = regions;
+            pagesArr.Add((JsonNode)pageObj);
+        }
+        var root = new JsonObject { ["pages"] = pagesArr };
+        return root.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
     }
 }
