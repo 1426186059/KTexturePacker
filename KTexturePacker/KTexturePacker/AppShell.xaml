@@ -9,6 +9,11 @@
     Title="KTexturePacker">
 
     <ShellContent
+        Title="Packer"
+        ContentTemplate="{DataTemplate pages:PackerPage}"
+        Route="packer" />
+
+    <ShellContent
         Title="Dashboard"
         Icon="{StaticResource IconDashboard}"
         ContentTemplate="{DataTemplate pages:MainPage}"
