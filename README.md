@@ -61,6 +61,14 @@ UI 顶部可切换：
 - 描述文件：**单个 `atlas.atlas.json`**，按 page 分块，每块以图片名（`atlas_0.png`…）开头，多页之间空行分隔。可直接被 libGDX 运行时加载。
 - 预览：所有页上下拼成一张 PNG（页间 8px 透明缝），便于单次请求查看全部。
 
+## 旋转方向与坐标系
+
+- **像素坐标系**：图集大图采用标准图像像素坐标——原点在**左上角**，X 轴向**右**递增，Y 轴向**下**递增。所有导出的子图坐标（`x`、`y`、`w`、`h`，以及 `sourceW`、`sourceH`）均以此为基准。
+- **旋转方向**：开启「允许 90° 旋转」时，MaxRects 可能把精灵旋转后放入图集。绘制使用 Skia 的 `canvas.RotateDegrees(90, ...)`。由于 Skia 坐标系 **Y 轴向下**，**正角度即屏幕上的顺时针方向**，因此旋转子图在图集中按 **顺时针（Clockwise）90°** 存放——即原图的顶边（第一行像素）落在占位矩形的右侧。
+- **对解析库的影响**：`KTexturePackerParser` 的 `KAtlasTool.GetUVRegion` 已把这一顺时针 90° **反向烘焙进四角 UV** 中。消费方直接把 `UVRegion` 的 `topLeftUV / topRightUV / bottomLeftUV / bottomRightUV` 贴到“正向（未旋转）”的四边形四角上，即可得到正确朝向，无需再手动旋转几何体。
+- **UV 的 V 轴约定**：`GetUVRegion(region, page, flipY: true)`（默认）按 OpenGL / Unity / MonoGame 纹理约定翻转 V 轴（纹理原点在左下）。若你的管线纹理原点已是左上（如按像素直接采样），传入 `flipY: false`。
+- **单参重载**：`GetUVRegion(AtlasRegion)` 返回**像素空间**四角（原点图集左上），由消费方按各自图集页尺寸（`page.Width / page.Height`）自行归一化。
+
 ## API
 
 | 方法 | 路径 | 说明 |
