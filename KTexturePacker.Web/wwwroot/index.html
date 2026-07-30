@@ -194,13 +194,6 @@
           <option value="contact">Contact Point</option>
         </select>
       </div>
-      <div class="field">
-        <label>描述文件格式</label>
-        <select id="format">
-          <option value="json">JSON (TexturePacker 风格)</option>
-          <option value="libgdx">libGDX .atlas</option>
-        </select>
-      </div>
       <div class="field row">
         <input id="allowRotation" type="checkbox" />
         <label style="margin:0">允许 90° 旋转（更高填充率）</label>
@@ -269,7 +262,6 @@
         padding: document.getElementById('padding').value,
         algorithm: document.getElementById('algorithm').value,
         allowRotation: document.getElementById('allowRotation').checked,
-        format: document.getElementById('format').value,
       };
     }
 
@@ -282,8 +274,10 @@
       const w = res.headers.get('X-Atlas-Width');
       const h = res.headers.get('X-Atlas-Height');
       const sc = res.headers.get('X-Sprite-Count');
+      const pages = parseInt(res.headers.get('X-Page-Count') || '1', 10);
       const uc = parseInt(res.headers.get('X-Unplaced-Count') || '0', 10);
       let txt = '图集 <b>' + w + '×' + h + '</b> · 已放置 <b>' + sc + '</b> 张';
+      if (pages > 1) txt += ' · 共 <b>' + pages + '</b> 页';
       if (uc > 0) txt += ' · <span style="color:#ffb86b">' + uc + ' 张放不下（调大最大边长或允许旋转）</span>';
       txt += '<br/>算法：' + algoLabel();
       meta.innerHTML = txt;
@@ -350,8 +344,8 @@
         }
         if (dirPath) { inputEl.value = dirPath; status('', ''); }
         else {
-          const got = rawDetail ? '（得到的是不完整路径：' + rawDetail + '）' : '（浏览器未提供完整本地路径）';
-          status('无法从拖拽获取完整文件夹路径' + got + '\n已打开文件夹选择器，请从中选择。', 'err');
+          const got = rawDetail ? '（得到的是不完整路径：' + rawDetail + '）' : '（浏览器出于安全限制不提供完整本地路径）';
+          status('拖拽无法获取完整文件夹路径' + got + '\n已打开文件夹选择器，请从中选择。', '');
           openPicker(inputEl);
         }
       });
@@ -462,6 +456,10 @@
     filesInput.onchange = () => { addFiles(Array.from(filesInput.files).filter(f => isImageFile(f.name))); filesInput.value = ''; };
     folderInput.onchange = () => { addFiles(Array.from(folderInput.files).filter(f => isImageFile(f.name))); folderInput.value = ''; };
 
+    // 阻止拖到页面其它位置时浏览器直接打开图片文件（拖到放置区外也不会跳转离开页面）
+    window.addEventListener('dragover', e => e.preventDefault());
+    window.addEventListener('drop', e => e.preventDefault());
+
     function refreshButtons() {
       const ready = mode === 'local'
         ? document.getElementById('inputFolder').value.trim().length > 0
@@ -479,7 +477,6 @@
       document.getElementById('maxSize').value = 2048;
       document.getElementById('padding').value = 1;
       document.getElementById('algorithm').value = 'best';
-      document.getElementById('format').value = 'json';
       document.getElementById('allowRotation').checked = false;
       preview.innerHTML = '<span class="empty">设置好输入后点击「预览图集」查看效果</span>';
       meta.innerHTML = '';
@@ -534,7 +531,7 @@
         try {
           const p = new URLSearchParams({ inputFolder: inp, outputFolder: out, maxSize: document.getElementById('maxSize').value,
             padding: document.getElementById('padding').value, algorithm: document.getElementById('algorithm').value,
-            allowRotation: document.getElementById('allowRotation').checked, format: document.getElementById('format').value });
+            allowRotation: document.getElementById('allowRotation').checked });
           const res = await fetch('/api/pack-local?' + p.toString());
           const txt = await res.text();
           if (!res.ok) status('失败: ' + txt, 'err');
@@ -551,7 +548,7 @@
           const url = URL.createObjectURL(blob);
           const a = document.createElement('a'); a.href = url; a.download = 'atlas.zip';
           document.body.appendChild(a); a.click(); a.remove();
-          status('完成，已下载 atlas.zip（含 atlas.png + 描述文件）。', 'ok');
+          status('完成，已下载 atlas.zip（含 atlas_0.png… 与单一 atlas.atlas.json，多页自动分图）。', 'ok');
           doPreview();
         } catch (e) { status('错误: ' + e.message, 'err'); }
         finally { packBtn.disabled = false; }
@@ -563,7 +560,7 @@
       for (const f of selectedFiles) fd.append('files', f, f.name);
       const p = getParams();
       fd.append('maxSize', p.maxSize); fd.append('padding', p.padding);
-      fd.append('algorithm', p.algorithm); fd.append('allowRotation', p.allowRotation); fd.append('format', p.format);
+      fd.append('algorithm', p.algorithm); fd.append('allowRotation', p.allowRotation);
       return fd;
     }
 

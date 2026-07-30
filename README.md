@@ -2,16 +2,15 @@
 
 一个免费的图集（Texture Atlas）打包工具，基于 **ASP.NET Core**（原生 AOT 发布）+ **SkiaSharp**。
 
-把一堆散图（png/jpg/gif/bmp/webp/tga）用 MaxRects 算法拼成一张大图，并导出坐标数据，支持通用 JSON 与 libGDX `.atlas` 两种格式。
+把一堆散图（png/jpg/gif/bmp/webp/tga）用 MaxRects 算法拼成一张或多张大图（自动分页），并导出坐标数据，使用 **libGDX `.atlas` 单文件格式**（一个 `.atlas.json` 含所有 page）。
 
 ## 功能
 
 - **MaxRects 装箱**：4 种启发式（`best` / `shortside` / `longside` / `bottomleft`）。
 - **旋转支持**：可选允许精灵旋转以更紧凑。
 - **边距（padding）**：精灵间留白，避免采样溢出。
-- **两种导出格式**：
-  - `json`：通用 JSON（帧名 + 矩形 + 源尺寸 + 偏移 + 旋转）。
-  - `atlas`：libGDX `.atlas` 格式（配合 `atlas.png`）。
+- **多页图集（自动分页）**：当图片在单张 `maxSize` 大图里放不下时，自动开新的一页继续塞，直到全部放下。
+- **单一导出格式**：libGDX `.atlas` 文本——**一个 `.atlas.json` 文件包含全部 page**，配合多张 `atlas_0.png`、`atlas_1.png`… 使用。
 - **两种工作模式**：本地模式（默认，按磁盘路径读图）、远程模式（上传图片）。
 
 ## 架构
@@ -53,20 +52,28 @@ UI 顶部可切换：
 - **原理**：在浏览器中选/拖图片（或整个文件夹，递归收集），上传到服务器打包后回传 zip / 预览 PNG。
 - **能力**：
   - 拖拽或选择文件 / 文件夹上传。
-  - 预览（返回 PNG）。
-  - 打包（返回 `atlas.zip`，内含 `atlas.png` + `atlas.json` 或 `atlas.atlas`）。
+  - 预览（返回拼合 PNG，多页上下拼成一张，头含 `X-Page-Count`）。
+  - 打包（返回 `atlas.zip`，内含 `atlas_0.png`…`atlas_N-1.png` + 单个 `atlas.atlas.json`）。
+
+## 输出结构（多页）
+
+- 多张大图：`atlas_0.png`、`atlas_1.png`、…（每页一张）。
+- 描述文件：**单个 `atlas.atlas.json`**，按 page 分块，每块以图片名（`atlas_0.png`…）开头，多页之间空行分隔。可直接被 libGDX 运行时加载。
+- 预览：所有页上下拼成一张 PNG（页间 8px 透明缝），便于单次请求查看全部。
 
 ## API
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET  | `/api/dirs?root=<路径>` | 列出磁盘目录（本地模式用）。 |
-| GET  | `/api/preview-local?inputFolder=&maxSize=&padding=&algorithm=&allowRotation=` | 本地路径预览，返回 PNG。 |
-| GET  | `/api/pack-local?inputFolder=&outputFolder=&maxSize=&padding=&algorithm=&allowRotation=&format=` | 本地路径打包，写入磁盘。 |
-| POST | `/api/preview` (multipart `files`) | 上传预览，返回 PNG。 |
+| GET  | `/api/dirs?path=<路径>` | 列出磁盘目录（本地模式用）。 |
+| GET  | `/api/preview-local?inputFolder=&maxSize=&padding=&algorithm=&allowRotation=` | 本地路径预览，返回拼合 PNG。 |
+| GET  | `/api/pack-local?inputFolder=&outputFolder=&maxSize=&padding=&algorithm=&allowRotation=` | 本地路径打包，写入磁盘。 |
+| POST | `/api/preview` (multipart `files`) | 上传预览，返回拼合 PNG。 |
 | POST | `/api/pack` (multipart `files`) | 上传打包，返回 zip。 |
 
-**公共参数**：`maxSize`（大图边长上限，默认 2048）、`padding`（默认 1）、`algorithm`（`best`/`shortside`/`longside`/`bottomleft`，默认 `best`）、`allowRotation`（bool，默认 false）、`format`（`json`/`atlas`，默认 `json`）。
+**公共参数**：`maxSize`（单页大图边长上限，默认 2048，放不下自动分页）、`padding`（默认 1）、`algorithm`（`best`/`longside`/`bottomleft`/`contact`，默认 `best`）、`allowRotation`（bool，默认 false）。
+
+**响应头（预览/打包）**：`X-Atlas-Width` / `X-Atlas-Height`（首页尺寸）、`X-Sprite-Count`（已放置总数）、`X-Page-Count`（页数）、`X-Unplaced-Count`（放不下的图片数，通常为 0；若单张超过 `maxSize` 则 > 0 并提示）。
 
 ## 支持的图片格式
 
@@ -76,4 +83,4 @@ UI 顶部可切换：
 ## 已知限制
 
 - 本地模式依赖服务本机运行；远程部署请使用上传模式。
-- 仅支持单页图集（一张大图）。
+- 单张图片本身超过 `maxSize` 时无法放入任何一页，会被丢弃并提示「N 张无法放入」。此时需调大 `maxSize` 或拆分该图。

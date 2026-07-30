@@ -7,7 +7,7 @@ using SkiaSharp;
 var builder = WebApplication.CreateBuilder(args);
 var app = builder.Build();
 
-// 远程上传模式需要放宽 Kestrel 请求体限制（本地路径模式不读请求体，无影响）。
+// 上传可能很大，禁用请求体大小限制
 app.Use(async (context, next) =>
 {
     var maxReq = context.Features.Get<IHttpMaxRequestBodySizeFeature>();
@@ -25,6 +25,17 @@ static MaxRectsMethod ParseAlgorithm(string? s) => s switch
     "contact" => MaxRectsMethod.ContactPointRule,
     _ => MaxRectsMethod.BestShortSideFit,
 };
+
+static PackerSettings ParseSettings(string? maxSize, string? padding, string? algorithm, bool? allowRotation)
+{
+    return new PackerSettings
+    {
+        MaxSize = int.TryParse(maxSize, out var m) && m > 0 ? m : 2048,
+        Padding = int.TryParse(padding, out var p) && p >= 0 ? p : 1,
+        AllowRotation = allowRotation ?? false,
+        Algorithm = ParseAlgorithm(algorithm),
+    };
+}
 
 // 自动判定模式：服务器是否和浏览器同机。
 // 本地模式本质是「服务器按磁盘路径读盘」，只有服务器在本机（localhost / 回环连接）时才有意义。
@@ -55,35 +66,32 @@ app.MapGet("/api/dirs", (string? path) =>
         string current;
         System.Collections.Generic.List<string> dirs;
         string parent;
-
         if (string.IsNullOrWhiteSpace(path))
         {
+            var roots = System.IO.DriveInfo.GetDrives()
+                .Where(d => d.IsReady)
+                .Select(d => d.RootDirectory.FullName)
+                .ToList();
             current = "";
-            dirs = Directory.GetLogicalDrives().OrderBy(d => d).ToList();
             parent = "";
+            dirs = roots;
         }
         else
         {
-            var di = new DirectoryInfo(path);
-            if (!di.Exists)
-                return Results.Text("路径不存在: " + path, "text/plain; charset=utf-8", statusCode: 400);
-            current = di.FullName;
-            parent = di.Parent == null ? "" : di.Parent.FullName;
-            dirs = di.EnumerateDirectories()
-                     .Select(d => d.FullName)
-                     .OrderBy(d => d)
-                     .ToList();
+            var dir = new DirectoryInfo(path);
+            if (!dir.Exists) return Results.Text("目录不存在: " + path, "text/plain; charset=utf-8", statusCode: 400);
+            current = dir.FullName;
+            parent = dir.Parent?.FullName ?? "";
+            dirs = dir.EnumerateDirectories()
+                .OrderBy(d => d.Name, StringComparer.OrdinalIgnoreCase)
+                .Select(d => d.FullName)
+                .ToList();
         }
-
-        var arr = new JsonArray();
-        foreach (var d in dirs)
-            arr.Add(JsonValue.Create(d));
-
         var json = new JsonObject
         {
             ["current"] = current,
             ["parent"] = parent,
-            ["dirs"] = arr,
+            ["dirs"] = new JsonArray(dirs.Select(d => (JsonNode)d).ToArray()),
         };
         return Results.Text(json.ToJsonString(), "application/json; charset=utf-8");
     }
@@ -93,193 +101,174 @@ app.MapGet("/api/dirs", (string? path) =>
     }
 });
 
-// 从上传的文件集合读取并解码图片，打包渲染出图集 PNG。
-// 用于远程模式：图片由浏览器上传，不依赖服务器路径。
-static (MemoryStream? Png, PackingResult? Result, string? Error) BuildAtlasFromFiles(
-    IFormFileCollection files, PackerSettings settings)
-{
-    var exts = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-    {
-        ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".tga"
-    };
-    var inputs = new List<SpriteInput>();
-    var usedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+// ---------- 图集构建（多页） ----------
 
+static bool IsImageFile(string name)
+{
+    var ext = Path.GetExtension(name).ToLowerInvariant();
+    return ext is ".png" or ".jpg" or ".jpeg" or ".gif" or ".bmp" or ".webp" or ".tga";
+}
+
+static (List<MemoryStream> Pngs, List<PackingResult> Pages, string? Error) BuildAtlasFromFiles(
+    IEnumerable<IFormFile> files, PackerSettings settings)
+{
+    var inputs = new List<SpriteInput>();
+    var names = new List<string>();
     foreach (var f in files)
     {
-        var fn = Path.GetFileName(f.FileName); // webkitdirectory 的 FileName 可能含相对路径，取末段
-        if (!exts.Contains(Path.GetExtension(fn)))
-            continue;
-        try
-        {
-            using var stream = f.OpenReadStream();
-            var bmp = SKBitmap.Decode(stream);
-            if (bmp is null)
-                continue;
-
-            var baseName = Path.GetFileNameWithoutExtension(fn);
-            if (string.IsNullOrWhiteSpace(baseName))
-                baseName = "sprite_" + inputs.Count;
-            var name = baseName;
-            int k = 1;
-            while (!usedNames.Add(name))
-                name = baseName + "_" + (k++);
-
-            inputs.Add(new SpriteInput(name, bmp));
-        }
-        catch
-        {
-            continue;
-        }
+        if (!IsImageFile(f.FileName)) continue;
+        string baseName = Path.GetFileNameWithoutExtension(f.FileName);
+        string name = baseName;
+        int k = 1;
+        while (names.Contains(name)) { name = baseName + "_" + (k++); }
+        names.Add(name);
+        using var ms = new MemoryStream();
+        f.CopyTo(ms);
+        ms.Position = 0;
+        var bmp = SKBitmap.Decode(ms);
+        if (bmp is null) continue;
+        inputs.Add(new SpriteInput(name, bmp));
     }
 
     if (inputs.Count == 0)
     {
-        var names = string.Join(", ", System.Linq.Enumerable.Select(files, f => (f.FileName + " (" + f.Length + "B)")));
-        return (null, null, "没有可解码的图片。收到 " + files.Count + " 个文件：[" + names + "]。仅支持 png/jpg/gif/bmp/webp/tga，且文件需为合法图片。");
+        var fileList = string.Join(", ", System.Linq.Enumerable.Select(files, f => f.FileName + " (" + f.Length + "B)"));
+        return (null!, null!, "没有可解码的图片。收到 " + System.Linq.Enumerable.Count(files) + " 个文件：[" + fileList + "]。仅支持 png/jpg/gif/bmp/webp/tga，且文件需为合法图片。");
     }
 
-    var result = AtlasPacker.Pack(inputs, settings);
-    using var atlas = AtlasPacker.RenderAtlas(result);
-    using var atlasData = atlas.Encode(SKEncodedImageFormat.Png, 100);
-    if (atlasData is null)
-    {
-        foreach (var s in inputs)
-            s.Bitmap.Dispose();
-        return (null, null, "图集编码失败。");
-    }
-
-    var png = new MemoryStream();
-    atlasData.AsStream().CopyTo(png);
-    png.Position = 0;
-
-    foreach (var s in inputs)
-        s.Bitmap.Dispose();
-
-    return (png, result, null);
+    var pages = AtlasPacker.PackPages(inputs, settings);
+    var (pngs, error) = RenderPages(pages);
+    foreach (var s in inputs) s.Bitmap.Dispose();
+    return (pngs, pages, error);
 }
 
-// 从服务器本地文件夹读取图片，打包渲染出图集 PNG。
-// 用于本地模式（浏览器与服务器同机）：直接扫服务器磁盘上的输入目录。
-static (MemoryStream? Png, PackingResult? Result, string? Error) BuildAtlasFromFolder(
+static (List<MemoryStream> Pngs, List<PackingResult> Pages, string? Error) BuildAtlasFromFolder(
     string inputFolder, string? outputFolder, PackerSettings settings)
 {
     if (string.IsNullOrWhiteSpace(inputFolder) || !Directory.Exists(inputFolder))
-        return (null, null, "输入文件夹不存在: " + inputFolder);
+        return (null!, null!, "输入文件夹不存在: " + (inputFolder ?? ""));
     if (string.IsNullOrWhiteSpace(outputFolder)) outputFolder = inputFolder;
 
-    var exts = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-    {
-        ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".tga"
-    };
-    var paths = Directory.EnumerateFiles(inputFolder)
-        .Where(p => exts.Contains(Path.GetExtension(p)))
-        .OrderBy(p => p)
-        .ToList();
-
-    if (paths.Count == 0)
-        return (null, null, "输入文件夹里没有图片（png/jpg/gif/bmp/webp/tga）。");
-
     var inputs = new List<SpriteInput>();
-    var usedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-    foreach (var p in paths)
+    var names = new List<string>();
+    foreach (var file in Directory.EnumerateFiles(inputFolder)
+                 .Where(f => IsImageFile(f))
+                 .OrderBy(f => f, StringComparer.OrdinalIgnoreCase))
     {
-        try
-        {
-            var bmp = SKBitmap.Decode(p);
-            if (bmp is null) continue;
-            var baseName = Path.GetFileNameWithoutExtension(p);
-            var name = baseName;
-            int k = 1;
-            while (!usedNames.Add(name)) name = baseName + "_" + (k++);
-            inputs.Add(new SpriteInput(name, bmp));
-        }
-        catch { continue; }
+        string baseName = Path.GetFileNameWithoutExtension(file);
+        string name = baseName;
+        int k = 1;
+        while (names.Contains(name)) { name = baseName + "_" + (k++); }
+        names.Add(name);
+        var bmp = SKBitmap.Decode(file);
+        if (bmp is null) continue;
+        inputs.Add(new SpriteInput(name, bmp));
     }
 
     if (inputs.Count == 0)
-        return (null, null, "没有可解码的图片。");
+        return (null!, null!, "该文件夹下没有可解码的图片（仅支持 png/jpg/gif/bmp/webp/tga）。");
 
-    var result = AtlasPacker.Pack(inputs, settings);
-    using var atlas = AtlasPacker.RenderAtlas(result);
-    using var atlasData = atlas.Encode(SKEncodedImageFormat.Png, 100);
-    if (atlasData is null)
+    var pages = AtlasPacker.PackPages(inputs, settings);
+    var (pngs, error) = RenderPages(pages);
+    foreach (var s in inputs) s.Bitmap.Dispose();
+    return (pngs, pages, error);
+}
+
+// 把每页打包结果渲染成 PNG 流（每张图一个 MemoryStream）
+static (List<MemoryStream> Pngs, string? Error) RenderPages(List<PackingResult> pages)
+{
+    var pngs = new List<MemoryStream>();
+    foreach (var page in pages)
     {
-        foreach (var s in inputs) s.Bitmap.Dispose();
-        return (null, null, "图集编码失败。");
+        using var atlas = AtlasPacker.RenderAtlas(page);
+        using var data = atlas.Encode(SKEncodedImageFormat.Png, 100);
+        if (data is null)
+        {
+            foreach (var p in pngs) p.Dispose();
+            return (null!, "图集编码失败。");
+        }
+        var ms = new MemoryStream();
+        data.AsStream().CopyTo(ms);
+        ms.Position = 0;
+        pngs.Add(ms);
+    }
+    return (pngs, null);
+}
+
+// 把所有页的 PNG 流上下拼成一张预览大图（页间留 8px 透明缝）。
+// 注意：必须从已渲染的 PNG 流拼合，不能从 pages 重新绘制——源 SKBitmap 在 BuildAtlas* 里已释放。
+static MemoryStream RenderComposite(IReadOnlyList<MemoryStream> pngs)
+{
+    var bmps = new List<SKBitmap>();
+    foreach (var ms in pngs) { ms.Position = 0; bmps.Add(SKBitmap.Decode(ms)!); }
+
+    if (bmps.Count == 1)
+    {
+        using var b = bmps[0];
+        using var data = b.Encode(SKEncodedImageFormat.Png, 100);
+        var single = new MemoryStream();
+        data!.AsStream().CopyTo(single);
+        single.Position = 0;
+        return single;
     }
 
-    if (outputFolder != inputFolder && !Directory.Exists(outputFolder))
-        Directory.CreateDirectory(outputFolder);
-
-    var imageName = "atlas.png";
-    var descName = result is null ? "atlas.json" : imageName;
-    var pngPath = Path.Combine(outputFolder, imageName);
-    using (var fs = File.OpenWrite(pngPath)) atlasData.AsStream().CopyTo(fs);
-    foreach (var s in inputs) s.Bitmap.Dispose();
-
-    // 把生成的 PNG 读回 MemoryStream 以便 HTTP 预览/下载返回
-    var png = new MemoryStream();
-    using (var fs = File.OpenRead(pngPath)) fs.CopyTo(png);
-    png.Position = 0;
-    return (png, result, null);
-}
-
-static (PackerSettings Settings, ExportFormat Format, string? Error) ParsePackParams(IFormCollection form)
-{
-    int maxSize = int.TryParse(form["maxSize"], out var m) && m > 0 ? m : 2048;
-    int padding = int.TryParse(form["padding"], out var p) && p >= 0 ? p : 1;
-    bool allowRotation = form["allowRotation"] == "true" || form["allowRotation"] == "1";
-    var algorithm = ParseAlgorithm(form["algorithm"]);
-    var format = form["format"] == "libgdx" ? ExportFormat.LibGdx : ExportFormat.Json;
-
-    var settings = new PackerSettings
+    const int gap = 8;
+    int totalH = bmps.Sum(b => b.Height) + gap * (bmps.Count - 1);
+    int maxW = bmps.Max(b => b.Width);
+    using var atlas = new SKBitmap(maxW, totalH);
+    using var canvas = new SKCanvas(atlas);
+    canvas.Clear(SKColors.Transparent);
+    int y = 0;
+    foreach (var b in bmps)
     {
-        MaxSize = maxSize,
-        Padding = padding,
-        AllowRotation = allowRotation,
-        Algorithm = algorithm,
-    };
+        canvas.DrawBitmap(b, 0, y, new SKSamplingOptions(SKFilterMode.Linear));
+        y += b.Height + gap;
+    }
+    foreach (var b in bmps) b.Dispose();
 
-    return (settings, format, null);
+    using var data2 = atlas.Encode(SKEncodedImageFormat.Png, 100);
+    var msOut = new MemoryStream();
+    data2!.AsStream().CopyTo(msOut);
+    msOut.Position = 0;
+    return msOut;
 }
 
-// 把图集 PNG + 描述写入服务器本地输出文件夹（本地模式）。
-static string WriteAtlasToDisk(PackingResult result, MemoryStream png, string outputFolder, ExportFormat format)
+// 写入服务器磁盘：atlas_0.png … atlas_N-1.png + 单个 atlas.atlas.json（含所有 page）
+static string WriteAtlasToDisk(List<PackingResult> pages, List<MemoryStream> pngs, string outputFolder)
 {
     if (!Directory.Exists(outputFolder)) Directory.CreateDirectory(outputFolder);
-    var imageName = "atlas.png";
-    var descName = format == ExportFormat.LibGdx ? "atlas.atlas" : "atlas.json";
-    var desc = format == ExportFormat.LibGdx
-        ? AtlasExporter.ToLibGdx(result, imageName)
-        : AtlasExporter.ToJson(result, imageName);
-
-    using (var fs = File.OpenWrite(Path.Combine(outputFolder, imageName)))
+    var imageNames = new List<string>();
+    for (int i = 0; i < pages.Count; i++)
     {
-        png.Position = 0;
-        png.CopyTo(fs);
+        var imgName = "atlas_" + i + ".png";
+        imageNames.Add(imgName);
+        var pngPath = Path.Combine(outputFolder, imgName);
+        using (var fs = File.OpenWrite(pngPath)) { pngs[i].Position = 0; pngs[i].CopyTo(fs); }
     }
-    File.WriteAllText(Path.Combine(outputFolder, descName), desc);
-    return Path.Combine(outputFolder, imageName);
+    var desc = AtlasExporter.ToAtlas(pages, imageNames);
+    File.WriteAllText(Path.Combine(outputFolder, "atlas.atlas.json"), desc);
+    return Path.Combine(outputFolder, "atlas.atlas.json");
 }
 
-// 把图集 PNG + 描述文件打成 zip 返回（远程模式）。
-static MemoryStream ZipAtlas(PackingResult result, MemoryStream png, ExportFormat format)
+// 打包成 zip：atlas_0.png … + 单个 atlas.atlas.json
+static MemoryStream ZipAtlas(List<PackingResult> pages, List<MemoryStream> pngs)
 {
-    var imageName = "atlas.png";
-    var descName = format == ExportFormat.LibGdx ? "atlas.atlas" : "atlas.json";
-    var desc = format == ExportFormat.LibGdx
-        ? AtlasExporter.ToLibGdx(result, imageName)
-        : AtlasExporter.ToJson(result, imageName);
+    var imageNames = new List<string>();
+    for (int i = 0; i < pages.Count; i++) imageNames.Add("atlas_" + i + ".png");
+    var desc = AtlasExporter.ToAtlas(pages, imageNames);
 
-    using var pngToZip = png;
     var zip = new MemoryStream();
     using (var archive = new ZipArchive(zip, ZipArchiveMode.Create, true))
     {
-        var entryImg = archive.CreateEntry(imageName);
-        using (var zs = entryImg.Open()) { pngToZip.Position = 0; pngToZip.CopyTo(zs); }
-        var entryDesc = archive.CreateEntry(descName);
-        using (var zs = entryDesc.Open())
+        for (int i = 0; i < pages.Count; i++)
+        {
+            var entry = archive.CreateEntry(imageNames[i]);
+            using var zs = entry.Open();
+            pngs[i].Position = 0;
+            pngs[i].CopyTo(zs);
+        }
+        var descEntry = archive.CreateEntry("atlas.atlas.json");
+        using (var zs = descEntry.Open())
         using (var w = new StreamWriter(zs))
             w.Write(desc);
     }
@@ -287,16 +276,21 @@ static MemoryStream ZipAtlas(PackingResult result, MemoryStream png, ExportForma
     return zip;
 }
 
-void SetMetaHeaders(HttpContext ctx, PackingResult result)
+void SetMetaHeaders(HttpContext ctx, IReadOnlyList<PackingResult> pages)
 {
-    ctx.Response.Headers["X-Atlas-Width"] = result.AtlasWidth.ToString();
-    ctx.Response.Headers["X-Atlas-Height"] = result.AtlasHeight.ToString();
-    ctx.Response.Headers["X-Sprite-Count"] = result.Sprites.Count.ToString();
-    ctx.Response.Headers["X-Unplaced-Count"] = result.Unplaced.Count.ToString();
+    var first = pages[0];
+    int total = 0, unplaced = 0;
+    foreach (var p in pages) { total += p.Sprites.Count; unplaced += p.Unplaced.Count; }
+    ctx.Response.Headers["X-Atlas-Width"] = first.AtlasWidth.ToString();
+    ctx.Response.Headers["X-Atlas-Height"] = first.AtlasHeight.ToString();
+    ctx.Response.Headers["X-Sprite-Count"] = total.ToString();
+    ctx.Response.Headers["X-Unplaced-Count"] = unplaced.ToString();
+    ctx.Response.Headers["X-Page-Count"] = pages.Count.ToString();
 }
 
-// ============ 预览 ============
-// 远程模式：上传文件 -> 返回 PNG
+// ---------- 远端模式：上传 ----------
+
+// 上传 -> 直接返回拼合预览 PNG（多页拼成一张）
 app.MapPost("/api/preview", async (HttpContext ctx) =>
 {
     IFormCollection form;
@@ -306,33 +300,18 @@ app.MapPost("/api/preview", async (HttpContext ctx) =>
     if (form.Files.Count == 0)
         return Results.Text("请先上传图片文件。", "text/plain; charset=utf-8", statusCode: 400);
 
-    var (settings, _, perr) = ParsePackParams(form);
-    var (png, result, error) = BuildAtlasFromFiles(form.Files, settings);
+    var settings = ParseSettings(form["maxSize"], form["padding"], form["algorithm"], form["allowRotation"] == "true" || form["allowRotation"] == "1");
+    var (pngs, pages, error) = BuildAtlasFromFiles(form.Files, settings);
     if (error is not null)
         return Results.Text(error, "text/plain; charset=utf-8", statusCode: 400);
 
-    SetMetaHeaders(ctx, result!);
-    return Results.File(png!, "image/png");
+    SetMetaHeaders(ctx, pages);
+    var composite = RenderComposite(pngs);
+    foreach (var p in pngs) p.Dispose();
+    return Results.File(composite, "image/png");
 });
 
-// 本地模式：输入/输出文件夹路径 -> 返回 PNG（GET，参数走 query，便于前端直接 fetch）
-app.MapGet("/api/preview-local", (string? inputFolder, string? outputFolder, int? maxSize, int? padding, string? algorithm, bool? allowRotation) =>
-{
-    var settings = new PackerSettings
-    {
-        MaxSize = maxSize is > 0 ? maxSize.Value : 2048,
-        Padding = padding is >= 0 ? padding.Value : 1,
-        AllowRotation = allowRotation ?? false,
-        Algorithm = ParseAlgorithm(algorithm),
-    };
-    var (png, result, error) = BuildAtlasFromFolder(inputFolder ?? "", outputFolder, settings);
-    if (error is not null)
-        return Results.Text(error, "text/plain; charset=utf-8", statusCode: 400);
-    return Results.File(png!, "image/png");
-});
-
-// ============ 打包 ============
-// 远程模式：上传文件 -> 下载 zip
+// 上传 -> 打包成 zip 下载
 app.MapPost("/api/pack", async (HttpContext ctx) =>
 {
     IFormCollection form;
@@ -342,21 +321,28 @@ app.MapPost("/api/pack", async (HttpContext ctx) =>
     if (form.Files.Count == 0)
         return Results.Text("请先上传图片文件。", "text/plain; charset=utf-8", statusCode: 400);
 
-    var (settings, format, perr) = ParsePackParams(form);
-    var (png, result, error) = BuildAtlasFromFiles(form.Files, settings);
+    var settings = ParseSettings(form["maxSize"], form["padding"], form["algorithm"], form["allowRotation"] == "true" || form["allowRotation"] == "1");
+    var (pngs, pages, error) = BuildAtlasFromFiles(form.Files, settings);
     if (error is not null)
         return Results.Text(error, "text/plain; charset=utf-8", statusCode: 400);
 
-    var zip = ZipAtlas(result!, png!, format);
+    var unplaced = pages.Sum(p => p.Unplaced.Count);
+    if (unplaced > 0)
+    {
+        foreach (var p in pngs) p.Dispose();
+        return Results.Text($"有 {unplaced} 张图片无法放入（可能单张超过最大边长），请调大 maxSize 或拆分。", "text/plain; charset=utf-8", statusCode: 400);
+    }
+
+    var zip = ZipAtlas(pages, pngs);
+    foreach (var p in pngs) p.Dispose();
     return Results.File(zip, "application/zip", "atlas.zip");
 });
 
-// 本地模式：输入/输出文件夹路径 -> 写入服务器磁盘（GET，参数走 query）
-app.MapGet("/api/pack-local", (string? inputFolder, string? outputFolder, int? maxSize, int? padding, string? algorithm, bool? allowRotation, string? format) =>
-{
-    if (string.IsNullOrWhiteSpace(outputFolder))
-        return Results.Text("本地模式需要填写输出文件夹。", "text/plain; charset=utf-8", statusCode: 400);
+// ---------- 本地模式：文件夹路径 ----------
 
+// 本地模式：输入/输出文件夹路径 -> 返回拼合预览 PNG（GET，参数走 query，便于前端直接 fetch）
+app.MapGet("/api/preview-local", (HttpContext ctx, string? inputFolder, string? outputFolder, int? maxSize, int? padding, string? algorithm, bool? allowRotation) =>
+{
     var settings = new PackerSettings
     {
         MaxSize = maxSize is > 0 ? maxSize.Value : 2048,
@@ -364,13 +350,42 @@ app.MapGet("/api/pack-local", (string? inputFolder, string? outputFolder, int? m
         AllowRotation = allowRotation ?? false,
         Algorithm = ParseAlgorithm(algorithm),
     };
-    var fmt = format == "libgdx" ? ExportFormat.LibGdx : ExportFormat.Json;
-    var (png, result, error) = BuildAtlasFromFolder(inputFolder ?? "", outputFolder, settings);
+
+    var (pngs, pages, error) = BuildAtlasFromFolder(inputFolder ?? "", outputFolder, settings);
     if (error is not null)
         return Results.Text(error, "text/plain; charset=utf-8", statusCode: 400);
 
-    var written = WriteAtlasToDisk(result!, png!, outputFolder!, fmt);
-    return Results.Text("已生成图集：\n" + written, "text/plain; charset=utf-8");
+    SetMetaHeaders(ctx, pages);
+    var composite = RenderComposite(pngs);
+    foreach (var p in pngs) p.Dispose();
+    return Results.File(composite, "image/png");
+});
+
+// 本地模式：输入/输出文件夹路径 -> 写入服务器磁盘（GET，参数走 query）
+app.MapGet("/api/pack-local", (string? inputFolder, string? outputFolder, int? maxSize, int? padding, string? algorithm, bool? allowRotation) =>
+{
+    var settings = new PackerSettings
+    {
+        MaxSize = maxSize is > 0 ? maxSize.Value : 2048,
+        Padding = padding is >= 0 ? padding.Value : 1,
+        AllowRotation = allowRotation ?? false,
+        Algorithm = ParseAlgorithm(algorithm),
+    };
+
+    var (pngs, pages, error) = BuildAtlasFromFolder(inputFolder ?? "", outputFolder, settings);
+    if (error is not null)
+        return Results.Text(error, "text/plain; charset=utf-8", statusCode: 400);
+
+    var unplaced = pages.Sum(p => p.Unplaced.Count);
+    if (unplaced > 0)
+    {
+        foreach (var p in pngs) p.Dispose();
+        return Results.Text($"有 {unplaced} 张图片无法放入（可能单张超过最大边长），请调大 maxSize 或拆分。", "text/plain; charset=utf-8", statusCode: 400);
+    }
+
+    var atlasPath = WriteAtlasToDisk(pages, pngs, outputFolder!);
+    foreach (var p in pngs) p.Dispose();
+    return Results.Text("已生成图集：" + atlasPath + "（" + pages.Count + " 页）", "text/plain; charset=utf-8");
 });
 
 app.Run();

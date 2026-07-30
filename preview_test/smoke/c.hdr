@@ -1,0 +1,6 @@
+HTTP/1.1 400 Bad Request
+Content-Length: 97
+Content-Type: text/plain; charset=utf-8
+Date: Thu, 30 Jul 2026 09:55:00 GMT
+Server: Kestrel
+

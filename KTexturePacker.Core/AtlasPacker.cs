@@ -89,6 +89,60 @@ public static class AtlasPacker
         return best ?? TryPack(sprites, maxSize, pad, settings);
     }
 
+    /// <summary>
+    /// 多页打包：当精灵在单张 MaxSize 图集里放不下时，自动分页（开新的一页继续塞），
+    /// 直到所有精灵都放下或单张精灵本身超过 MaxSize（无法放下，留在最后一页的 Unplaced）。
+    /// 返回每一页的 PackingResult（按页码索引 0,1,2…）。
+    /// </summary>
+    public static List<PackingResult> PackPages(IEnumerable<SpriteInput> inputs, PackerSettings settings)
+    {
+        var remaining = inputs
+            .Where(s => s.Bitmap is not null && s.Bitmap.Width > 0 && s.Bitmap.Height > 0)
+            .OrderByDescending(s => (long)s.Bitmap.Width * s.Bitmap.Height)
+            .ToList();
+
+        int maxSize = Math.Max(64, settings.MaxSize);
+        int pad = Math.Max(0, settings.Padding);
+
+        var pages = new List<PackingResult>();
+        while (remaining.Count > 0)
+        {
+            int start = 64;
+            start = Math.Max(start, NextPowerOfTwo(remaining.Max(s => Math.Max(s.Bitmap.Width, s.Bitmap.Height))));
+            start = Math.Min(start, maxSize);
+
+            PackingResult? best = null;
+            int size = start;
+            while (size <= maxSize)
+            {
+                var attempt = TryPack(remaining, size, pad, settings);
+                if (attempt.Unplaced.Count == 0)
+                {
+                    best = attempt;
+                    break;
+                }
+                // 用最大（最新）的尝试：它放下的精灵最多
+                best = attempt;
+                size *= 2;
+            }
+
+            var page = best ?? TryPack(remaining, maxSize, pad, settings);
+            pages.Add(page);
+            remaining = page.Unplaced;
+
+            // 防止死循环：当前页一张都没放下（如某张精灵本身就超过 MaxSize）
+            if (page.Sprites.Count == 0)
+                break;
+        }
+
+        // 非末页的 Unplaced 只是「留给下一页」的接力，并非真正放不下；
+        // 只保留末页的 Unplaced 表示真正无法放入的精灵。
+        for (int i = 0; i < pages.Count - 1; i++)
+            pages[i].Unplaced.Clear();
+
+        return pages;
+    }
+
     private static PackingResult TryPack(List<SpriteInput> sprites, int size, int pad, PackerSettings settings)
     {
         var packer = new MaxRectsPacker(size, size, settings.AllowRotation, settings.Algorithm);
