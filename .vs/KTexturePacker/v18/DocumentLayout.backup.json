@@ -1,0 +1,122 @@
+{
+  "Version": 1,
+  "WorkspaceRootPath": "D:\\OpenSource\\KTexturePacker\\",
+  "Documents": [
+    {
+      "AbsoluteMoniker": "D:0:0:{8636D630-00A1-4CBC-9EA9-6C6D7EC2076A}|KTexturePacker.Web\\KTexturePacker.Web.csproj|d:\\opensource\\ktexturepacker\\ktexturepacker.web\\program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{8636D630-00A1-4CBC-9EA9-6C6D7EC2076A}|KTexturePacker.Web\\KTexturePacker.Web.csproj|solutionrelative:ktexturepacker.web\\program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{13CEFA03-D402-4FFF-A63E-ECC9676A9558}|KTexturePacker.Core\\KTexturePacker.Core.csproj|d:\\opensource\\ktexturepacker\\ktexturepacker.core\\atlaspacker.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{13CEFA03-D402-4FFF-A63E-ECC9676A9558}|KTexturePacker.Core\\KTexturePacker.Core.csproj|solutionrelative:ktexturepacker.core\\atlaspacker.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{8636D630-00A1-4CBC-9EA9-6C6D7EC2076A}|KTexturePacker.Web\\KTexturePacker.Web.csproj|d:\\opensource\\ktexturepacker\\ktexturepacker.web\\wwwroot\\index.html||{40D31677-CBC0-4297-A9EF-89D907823A98}",
+      "RelativeMoniker": "D:0:0:{8636D630-00A1-4CBC-9EA9-6C6D7EC2076A}|KTexturePacker.Web\\KTexturePacker.Web.csproj|solutionrelative:ktexturepacker.web\\wwwroot\\index.html||{40D31677-CBC0-4297-A9EF-89D907823A98}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{13CEFA03-D402-4FFF-A63E-ECC9676A9558}|KTexturePacker.Core\\KTexturePacker.Core.csproj|d:\\opensource\\ktexturepacker\\ktexturepacker.core\\maxrectspacker.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{13CEFA03-D402-4FFF-A63E-ECC9676A9558}|KTexturePacker.Core\\KTexturePacker.Core.csproj|solutionrelative:ktexturepacker.core\\maxrectspacker.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{13CEFA03-D402-4FFF-A63E-ECC9676A9558}|KTexturePacker.Core\\KTexturePacker.Core.csproj|d:\\opensource\\ktexturepacker\\ktexturepacker.core\\atlasexporter.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{13CEFA03-D402-4FFF-A63E-ECC9676A9558}|KTexturePacker.Core\\KTexturePacker.Core.csproj|solutionrelative:ktexturepacker.core\\atlasexporter.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{13CEFA03-D402-4FFF-A63E-ECC9676A9558}|KTexturePacker.Core\\KTexturePacker.Core.csproj|d:\\opensource\\ktexturepacker\\ktexturepacker.core\\packersettings.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{13CEFA03-D402-4FFF-A63E-ECC9676A9558}|KTexturePacker.Core\\KTexturePacker.Core.csproj|solutionrelative:ktexturepacker.core\\packersettings.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    }
+  ],
+  "DocumentGroupContainers": [
+    {
+      "Orientation": 0,
+      "VerticalTabListWidth": 256,
+      "DocumentGroups": [
+        {
+          "DockedWidth": 200,
+          "SelectedChildIndex": 5,
+          "Children": [
+            {
+              "$type": "Document",
+              "DocumentIndex": 4,
+              "Title": "AtlasExporter.cs",
+              "DocumentMoniker": "D:\\OpenSource\\KTexturePacker\\KTexturePacker.Core\\AtlasExporter.cs",
+              "RelativeDocumentMoniker": "KTexturePacker.Core\\AtlasExporter.cs",
+              "ToolTip": "D:\\OpenSource\\KTexturePacker\\KTexturePacker.Core\\AtlasExporter.cs",
+              "RelativeToolTip": "KTexturePacker.Core\\AtlasExporter.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-07-30T17:15:08.249Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 5,
+              "Title": "PackerSettings.cs",
+              "DocumentMoniker": "D:\\OpenSource\\KTexturePacker\\KTexturePacker.Core\\PackerSettings.cs",
+              "RelativeDocumentMoniker": "KTexturePacker.Core\\PackerSettings.cs",
+              "ToolTip": "D:\\OpenSource\\KTexturePacker\\KTexturePacker.Core\\PackerSettings.cs",
+              "RelativeToolTip": "KTexturePacker.Core\\PackerSettings.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAsAAAAWAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-07-30T17:09:00.063Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 1,
+              "Title": "AtlasPacker.cs",
+              "DocumentMoniker": "D:\\OpenSource\\KTexturePacker\\KTexturePacker.Core\\AtlasPacker.cs",
+              "RelativeDocumentMoniker": "KTexturePacker.Core\\AtlasPacker.cs",
+              "ToolTip": "D:\\OpenSource\\KTexturePacker\\KTexturePacker.Core\\AtlasPacker.cs",
+              "RelativeToolTip": "KTexturePacker.Core\\AtlasPacker.cs",
+              "ViewState": "AgIAANMAAAAAAAAAAAAAAN4AAAAnAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-07-30T17:08:05.376Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 3,
+              "Title": "MaxRectsPacker.cs",
+              "DocumentMoniker": "D:\\OpenSource\\KTexturePacker\\KTexturePacker.Core\\MaxRectsPacker.cs",
+              "RelativeDocumentMoniker": "KTexturePacker.Core\\MaxRectsPacker.cs",
+              "ToolTip": "D:\\OpenSource\\KTexturePacker\\KTexturePacker.Core\\MaxRectsPacker.cs",
+              "RelativeToolTip": "KTexturePacker.Core\\MaxRectsPacker.cs",
+              "ViewState": "AgIAAAUAAAAAAAAAAAAAABYAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-07-30T09:20:36.282Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 2,
+              "Title": "index.html",
+              "DocumentMoniker": "D:\\OpenSource\\KTexturePacker\\KTexturePacker.Web\\wwwroot\\index.html",
+              "RelativeDocumentMoniker": "KTexturePacker.Web\\wwwroot\\index.html",
+              "ToolTip": "D:\\OpenSource\\KTexturePacker\\KTexturePacker.Web\\wwwroot\\index.html",
+              "RelativeToolTip": "KTexturePacker.Web\\wwwroot\\index.html",
+              "ViewState": "AgIAAO4BAAAAAAAAAAAAAOQBAAAnAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001512|",
+              "WhenOpened": "2026-07-30T09:20:11.165Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 0,
+              "Title": "Program.cs",
+              "DocumentMoniker": "D:\\OpenSource\\KTexturePacker\\KTexturePacker.Web\\Program.cs",
+              "RelativeDocumentMoniker": "KTexturePacker.Web\\Program.cs",
+              "ToolTip": "D:\\OpenSource\\KTexturePacker\\KTexturePacker.Web\\Program.cs",
+              "RelativeToolTip": "KTexturePacker.Web\\Program.cs",
+              "ViewState": "AgIAACYBAAAAAAAAAAAzwCoBAAACAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-07-30T06:57:49.075Z",
+              "EditorCaption": ""
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
