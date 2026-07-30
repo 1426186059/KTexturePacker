@@ -109,10 +109,14 @@
         linear-gradient(-45deg, transparent 75%, #15171d 75%) 0 0/20px 20px,
         var(--panel);
       border: 1px solid var(--border); border-radius: 12px; min-height: 360px;
-      display: flex; align-items: center; justify-content: center; overflow: auto;
+      display: flex; align-items: flex-start; justify-content: flex-start; flex-wrap: wrap;
+      gap: 14px; padding: 16px; overflow: auto;
     }
     .preview img { max-width: 100%; image-rendering: pixelated; }
     .preview .empty { color: var(--muted); font-size: 14px; text-align: center; padding: 20px; }
+    .preview .page { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; background: var(--panel); display: flex; flex-direction: column; }
+    .preview .pagecap { font-size: 12px; color: var(--muted); padding: 6px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+    .preview .page img { display: block; max-width: 512px; }
     .meta { margin-top: 12px; font-size: 13px; color: var(--muted); }
     .meta b { color: var(--text); }
     .hintline { color: var(--muted); font-size: 12px; margin-top: 8px; }
@@ -198,6 +202,11 @@
         <input id="allowRotation" type="checkbox" />
         <label style="margin:0">允许 90° 旋转（更高填充率）</label>
       </div>
+      <div class="field">
+        <label>预览最大边长 (px)</label>
+        <input id="previewMax" type="number" value="512" min="64" step="64" />
+        <small style="color:#8a93a6;display:block;margin-top:2px">超过此边长的图集会切成多页预览（值越小页越多）</small>
+      </div>
 
       <button id="packBtn" class="btn">打包</button>
       <button id="previewBtn" class="btn secondary" style="margin-top:8px">预览图集</button>
@@ -265,19 +274,34 @@
       };
     }
 
-    function showPreviewBlob(blob, res) {
-      const url = URL.createObjectURL(blob);
+    async function showPreview(res) {
+      const j = await res.json();
+      const pages = j.pages || [];
+      const count = j.count || pages.length;
       preview.innerHTML = '';
-      const img = document.createElement('img');
-      img.src = url;
-      preview.appendChild(img);
+      if (!pages.length) {
+        preview.innerHTML = '<span class="empty">无预览</span>';
+      } else {
+        pages.forEach((pg, i) => {
+          const wrap = document.createElement('div');
+          wrap.className = 'page';
+          const cap = document.createElement('div');
+          cap.className = 'pagecap';
+          cap.textContent = '第 ' + (i + 1) + ' / ' + count + ' 预览页  (' + pg.w + '×' + pg.h + ')';
+          const img = document.createElement('img');
+          img.src = 'data:image/png;base64,' + pg.png;
+          wrap.appendChild(cap);
+          wrap.appendChild(img);
+          preview.appendChild(wrap);
+        });
+      }
       const w = res.headers.get('X-Atlas-Width');
       const h = res.headers.get('X-Atlas-Height');
       const sc = res.headers.get('X-Sprite-Count');
-      const pages = parseInt(res.headers.get('X-Page-Count') || '1', 10);
+      const pagesH = parseInt(res.headers.get('X-Page-Count') || count, 10);
       const uc = parseInt(res.headers.get('X-Unplaced-Count') || '0', 10);
-      let txt = '图集 <b>' + w + '×' + h + '</b> · 已放置 <b>' + sc + '</b> 张';
-      if (pages > 1) txt += ' · 共 <b>' + pages + '</b> 页';
+      let txt = '图集首页 <b>' + w + '×' + h + '</b> · 已放置 <b>' + sc + '</b> 张';
+      if (pagesH > 1) txt += ' · 共 <b>' + pagesH + '</b> 个图集页';
       if (uc > 0) txt += ' · <span style="color:#ffb86b">' + uc + ' 张放不下（调大最大边长或允许旋转）</span>';
       txt += '<br/>算法：' + algoLabel();
       meta.innerHTML = txt;
@@ -478,6 +502,7 @@
       document.getElementById('padding').value = 1;
       document.getElementById('algorithm').value = 'best';
       document.getElementById('allowRotation').checked = false;
+      document.getElementById('previewMax').value = 512;
       preview.innerHTML = '<span class="empty">设置好输入后点击「预览图集」查看效果</span>';
       meta.innerHTML = '';
       status('', '');
@@ -495,10 +520,12 @@
         try {
           const p = new URLSearchParams({ inputFolder: inp, outputFolder: document.getElementById('outputFolder').value.trim(),
             maxSize: document.getElementById('maxSize').value, padding: document.getElementById('padding').value,
-            algorithm: document.getElementById('algorithm').value, allowRotation: document.getElementById('allowRotation').checked });
+            algorithm: document.getElementById('algorithm').value, allowRotation: document.getElementById('allowRotation').checked,
+            previewMax: document.getElementById('previewMax').value });
+          p.append('_', Date.now().toString());
           const res = await fetch('/api/preview-local?' + p.toString());
           if (!res.ok) { status('预览失败：' + (await res.text()), 'err'); return; }
-          showPreviewBlob(await res.blob(), res);
+          showPreview(res);
           status('预览已生成（未写入磁盘）。', 'ok');
         } catch (e) { status('错误：' + e.message, 'err'); }
         finally { previewBtn.disabled = false; }
@@ -507,9 +534,11 @@
         previewBtn.disabled = true; status('预览生成中…', '');
         try {
           const fd = buildForm();
+          fd.append('previewMax', document.getElementById('previewMax').value);
+          fd.append('_', Date.now().toString());
           const res = await fetch('/api/preview', { method: 'POST', body: fd });
           if (!res.ok) { status('预览失败：' + (await res.text() || res.status), 'err'); return; }
-          showPreviewBlob(await res.blob(), res);
+          showPreview(res);
           status('预览已生成（未下载）。', 'ok');
         } catch (e) { status('错误：' + e.message, 'err'); }
         finally { previewBtn.disabled = false; }

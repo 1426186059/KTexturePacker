@@ -15,8 +15,25 @@ app.Use(async (context, next) =>
     await next();
 });
 
+// 所有 /api 响应禁止缓存：避免浏览器缓存预览/打包结果导致「再次点击无效」或参数修改不生效。
+app.Use(async (ctx, next) =>
+{
+    if (ctx.Request.Path.StartsWithSegments("/api"))
+        ctx.Response.Headers.CacheControl = "no-store";
+    await next();
+});
+
 app.UseDefaultFiles();
-app.UseStaticFiles();
+app.UseStaticFiles(new StaticFileOptions
+{
+    // 禁用缓存，避免浏览器沿用旧版 index.html（旧前端把响应当 PNG，新后端返回 JSON 会导致预览空白）
+    OnPrepareResponse = ctx =>
+    {
+        ctx.Context.Response.Headers.CacheControl = "no-cache, no-store, must-revalidate";
+        ctx.Context.Response.Headers.Pragma = "no-cache";
+        ctx.Context.Response.Headers.Expires = "0";
+    }
+});
 
 static MaxRectsMethod ParseAlgorithm(string? s) => s switch
 {
@@ -109,6 +126,14 @@ static bool IsImageFile(string name)
     return ext is ".png" or ".jpg" or ".jpeg" or ".gif" or ".bmp" or ".webp" or ".tga";
 }
 
+// 排除本工具自己导出的图集文件（atlas.png / atlas_0.png …），避免「输出目录=输入目录」时
+// 上一轮产物被当成素材再次喂入，导致图集越滚越大、出现大量空白页。
+static bool IsToolOutput(string name)
+{
+    if (name.Equals("atlas.png", StringComparison.OrdinalIgnoreCase)) return true;
+    return System.Text.RegularExpressions.Regex.IsMatch(name, @"^atlas_\d+\.png$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+}
+
 static (List<MemoryStream> Pngs, List<PackingResult> Pages, string? Error) BuildAtlasFromFiles(
     IEnumerable<IFormFile> files, PackerSettings settings)
 {
@@ -152,7 +177,7 @@ static (List<MemoryStream> Pngs, List<PackingResult> Pages, string? Error) Build
     var inputs = new List<SpriteInput>();
     var names = new List<string>();
     foreach (var file in Directory.EnumerateFiles(inputFolder)
-                 .Where(f => IsImageFile(f))
+                 .Where(f => IsImageFile(f) && !IsToolOutput(Path.GetFileName(f)))
                  .OrderBy(f => f, StringComparer.OrdinalIgnoreCase))
     {
         string baseName = Path.GetFileNameWithoutExtension(file);
@@ -195,42 +220,66 @@ static (List<MemoryStream> Pngs, string? Error) RenderPages(List<PackingResult> 
     return (pngs, null);
 }
 
-// 把所有页的 PNG 流上下拼成一张预览大图（页间留 8px 透明缝）。
-// 注意：必须从已渲染的 PNG 流拼合，不能从 pages 重新绘制——源 SKBitmap 在 BuildAtlas* 里已释放。
-static MemoryStream RenderComposite(IReadOnlyList<MemoryStream> pngs)
+// 预览：把每个图集页按「预览最大边长」切分成多张预览页（分页/平铺），每页不超过 previewMax×previewMax。
+// 若某图集页本身不超过 previewMax，则整页作为 1 张预览页输出（原始尺寸，不放大）。
+// 这样「预览最大边长」即可控制预览的分页数量：值越小，预览页越多。
+// 注意：必须从已渲染的 PNG 流切分，不能从 pages 重新绘制——源 SKBitmap 在 BuildAtlas* 里已释放。
+static JsonObject RenderPreviewPages(IReadOnlyList<MemoryStream> pngs, int previewMax)
 {
-    var bmps = new List<SKBitmap>();
-    foreach (var ms in pngs) { ms.Position = 0; bmps.Add(SKBitmap.Decode(ms)!); }
-
-    if (bmps.Count == 1)
+    previewMax = Math.Clamp(previewMax, 64, 4096);
+    var arr = new JsonArray();
+    foreach (var ms in pngs)
     {
-        using var b = bmps[0];
-        using var data = b.Encode(SKEncodedImageFormat.Png, 100);
-        var single = new MemoryStream();
-        data!.AsStream().CopyTo(single);
-        single.Position = 0;
-        return single;
-    }
+        ms.Position = 0;
+        using var bmp = SKBitmap.Decode(ms)!;
+        int w = bmp.Width, h = bmp.Height;
 
-    const int gap = 8;
-    int totalH = bmps.Sum(b => b.Height) + gap * (bmps.Count - 1);
-    int maxW = bmps.Max(b => b.Width);
-    using var atlas = new SKBitmap(maxW, totalH);
-    using var canvas = new SKCanvas(atlas);
-    canvas.Clear(SKColors.Transparent);
-    int y = 0;
-    foreach (var b in bmps)
-    {
-        canvas.DrawBitmap(b, 0, y, new SKSamplingOptions(SKFilterMode.Linear));
-        y += b.Height + gap;
-    }
-    foreach (var b in bmps) b.Dispose();
+        // 整页不超上限：直接输出原尺寸单页
+        if (w <= previewMax && h <= previewMax)
+        {
+            using var img = SKImage.FromBitmap(bmp);
+            using var data = img.Encode(SKEncodedImageFormat.Png, 100);
+            arr.Add((JsonNode)new JsonObject
+            {
+                ["w"] = w,
+                ["h"] = h,
+                ["png"] = Convert.ToBase64String(data.ToArray()),
+            });
+            continue;
+        }
 
-    using var data2 = atlas.Encode(SKEncodedImageFormat.Png, 100);
-    var msOut = new MemoryStream();
-    data2!.AsStream().CopyTo(msOut);
-    msOut.Position = 0;
-    return msOut;
+        // 切分为 previewMax×previewMax 的网格，每格作为一页预览
+        int cols = (int)Math.Ceiling((double)w / previewMax);
+        int rows = (int)Math.Ceiling((double)h / previewMax);
+        for (int r = 0; r < rows; r++)
+        {
+            for (int c = 0; c < cols; c++)
+            {
+                int sx = c * previewMax;
+                int sy = r * previewMax;
+                int sw = Math.Min(previewMax, w - sx);
+                int sh = Math.Min(previewMax, h - sy);
+                using var tile = new SKBitmap(sw, sh);
+                using (var canvas = new SKCanvas(tile))
+                {
+                    canvas.Clear(SKColors.Transparent);
+                    canvas.DrawBitmap(bmp,
+                        new SKRect(sx, sy, sx + sw, sy + sh),
+                        new SKRect(0, 0, sw, sh),
+                        new SKSamplingOptions(SKFilterMode.Linear));
+                }
+                using var img = SKImage.FromBitmap(tile);
+                using var data = img.Encode(SKEncodedImageFormat.Png, 100);
+                arr.Add((JsonNode)new JsonObject
+                {
+                    ["w"] = sw,
+                    ["h"] = sh,
+                    ["png"] = Convert.ToBase64String(data.ToArray()),
+                });
+            }
+        }
+    }
+    return new JsonObject { ["pages"] = arr, ["count"] = arr.Count };
 }
 
 // 写入服务器磁盘：atlas_0.png … atlas_N-1.png + 单个 atlas.atlas.json（含所有 page）
@@ -290,7 +339,7 @@ void SetMetaHeaders(HttpContext ctx, IReadOnlyList<PackingResult> pages)
 
 // ---------- 远端模式：上传 ----------
 
-// 上传 -> 直接返回拼合预览 PNG（多页拼成一张）
+// 上传 -> 返回分页缩略图 JSON（按 previewMax 切分为多页预览）
 app.MapPost("/api/preview", async (HttpContext ctx) =>
 {
     IFormCollection form;
@@ -301,14 +350,15 @@ app.MapPost("/api/preview", async (HttpContext ctx) =>
         return Results.Text("请先上传图片文件。", "text/plain; charset=utf-8", statusCode: 400);
 
     var settings = ParseSettings(form["maxSize"], form["padding"], form["algorithm"], form["allowRotation"] == "true" || form["allowRotation"] == "1");
+    int previewMax = int.TryParse(form["previewMax"], out var pm) && pm > 0 ? pm : 512;
     var (pngs, pages, error) = BuildAtlasFromFiles(form.Files, settings);
     if (error is not null)
         return Results.Text(error, "text/plain; charset=utf-8", statusCode: 400);
 
     SetMetaHeaders(ctx, pages);
-    var composite = RenderComposite(pngs);
+    var json = RenderPreviewPages(pngs, previewMax);
     foreach (var p in pngs) p.Dispose();
-    return Results.File(composite, "image/png");
+    return Results.Text(json.ToJsonString(), "application/json; charset=utf-8");
 });
 
 // 上传 -> 打包成 zip 下载
@@ -340,8 +390,8 @@ app.MapPost("/api/pack", async (HttpContext ctx) =>
 
 // ---------- 本地模式：文件夹路径 ----------
 
-// 本地模式：输入/输出文件夹路径 -> 返回拼合预览 PNG（GET，参数走 query，便于前端直接 fetch）
-app.MapGet("/api/preview-local", (HttpContext ctx, string? inputFolder, string? outputFolder, int? maxSize, int? padding, string? algorithm, bool? allowRotation) =>
+// 本地模式：输入/输出文件夹路径 -> 返回分页缩略图 JSON（按 previewMax 切分为多页预览，GET 便于前端直接 fetch）
+app.MapGet("/api/preview-local", (HttpContext ctx, string? inputFolder, string? outputFolder, int? maxSize, int? padding, string? algorithm, bool? allowRotation, int? previewMax) =>
 {
     var settings = new PackerSettings
     {
@@ -356,9 +406,10 @@ app.MapGet("/api/preview-local", (HttpContext ctx, string? inputFolder, string? 
         return Results.Text(error, "text/plain; charset=utf-8", statusCode: 400);
 
     SetMetaHeaders(ctx, pages);
-    var composite = RenderComposite(pngs);
+    int pv = previewMax is > 0 ? previewMax.Value : 512;
+    var json = RenderPreviewPages(pngs, pv);
     foreach (var p in pngs) p.Dispose();
-    return Results.File(composite, "image/png");
+    return Results.Text(json.ToJsonString(), "application/json; charset=utf-8");
 });
 
 // 本地模式：输入/输出文件夹路径 -> 写入服务器磁盘（GET，参数走 query）

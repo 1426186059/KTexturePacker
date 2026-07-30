@@ -96,24 +96,47 @@ public static class AtlasPacker
     /// </summary>
     public static List<PackingResult> PackPages(IEnumerable<SpriteInput> inputs, PackerSettings settings)
     {
-        var remaining = inputs
+        int maxSize = Math.Max(64, settings.MaxSize);
+        int pad = Math.Max(0, settings.Padding);
+
+        var sorted = inputs
             .Where(s => s.Bitmap is not null && s.Bitmap.Width > 0 && s.Bitmap.Height > 0)
             .OrderByDescending(s => (long)s.Bitmap.Width * s.Bitmap.Height)
             .ToList();
 
-        int maxSize = Math.Max(64, settings.MaxSize);
-        int pad = Math.Max(0, settings.Padding);
-
         var pages = new List<PackingResult>();
+
+        // 先把「单张尺寸(含 padding)超过 maxSize」的大图剥离出来，各自独占一页。
+        // 这样它们不会把整本图集撑成一张超大页、把其余小图也卷进去
+        //（旧逻辑会因此产生 4096 巨页 + 大量空白，并被预览切成几十页）。
+        // 这些大图页允许突破 maxSize，但尺寸紧贴实际内容（必要时用非 2 的幂），避免无谓翻倍膨胀。
+        var oversized = sorted
+            .Where(s => Math.Max(s.Bitmap.Width, s.Bitmap.Height) + pad * 2 > maxSize)
+            .ToList();
+        foreach (var big in oversized)
+        {
+            int dim = Math.Max(big.Bitmap.Width, big.Bitmap.Height);
+            int need = (int)Math.Ceiling(dim + pad * 2.0);
+            int pot = NextPowerOfTwo(dim);
+            int size = need <= pot ? pot : need;
+            pages.Add(TryPack(new List<SpriteInput> { big }, size, pad, settings));
+        }
+
+        // 剩余小图严格按 maxSize 分页（不再突破 maxSize），由 MaxRects 紧凑填充
+        var remaining = sorted.Except(oversized).ToList();
         while (remaining.Count > 0)
         {
+            int maxSingle = remaining.Max(s => Math.Max(s.Bitmap.Width, s.Bitmap.Height)) + pad * 2;
+            // pageMax 固定为 maxSize（封顶）；start 取「能容纳最大一张」的最小 2 的幂，循环逐步翻倍找到能放下全部的最小页。
+            int pageMax = maxSize;
+
             int start = 64;
-            start = Math.Max(start, NextPowerOfTwo(remaining.Max(s => Math.Max(s.Bitmap.Width, s.Bitmap.Height))));
-            start = Math.Min(start, maxSize);
+            start = Math.Max(start, NextPowerOfTwo(maxSingle));
+            start = Math.Min(start, pageMax);
 
             PackingResult? best = null;
             int size = start;
-            while (size <= maxSize)
+            while (size <= pageMax)
             {
                 var attempt = TryPack(remaining, size, pad, settings);
                 if (attempt.Unplaced.Count == 0)
@@ -126,7 +149,7 @@ public static class AtlasPacker
                 size *= 2;
             }
 
-            var page = best ?? TryPack(remaining, maxSize, pad, settings);
+            var page = best ?? TryPack(remaining, pageMax, pad, settings);
             pages.Add(page);
             remaining = page.Unplaced;
 
