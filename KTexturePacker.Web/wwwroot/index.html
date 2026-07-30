@@ -29,70 +29,76 @@
       display: flex;
       align-items: baseline;
       gap: 12px;
+      flex-wrap: wrap;
     }
     header h1 { font-size: 18px; margin: 0; }
     header span { color: var(--muted); font-size: 13px; }
-    .wrap {
-      display: grid;
-      grid-template-columns: 320px 1fr;
-      gap: 18px;
-      padding: 18px 24px;
-      align-items: start;
+    .modeToggle { margin-left: auto; display: flex; gap: 6px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 3px; }
+    .modeToggle button {
+      border: none; background: transparent; color: var(--muted);
+      padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 13px;
     }
+    .modeToggle button.active { background: var(--accent); color: #fff; }
+    .modeToggle button:disabled { opacity: .35; cursor: not-allowed; }
+
+    /* 顶部输入区 */
+    .topbar { padding: 16px 24px; border-bottom: 1px solid var(--border); background: var(--panel); }
+    .topbar-inner { max-width: 1280px; margin: 0 auto; }
+    .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+    @media (max-width: 760px) { .field-row { grid-template-columns: 1fr; } }
+    .pathfield label { display: block; font-size: 13px; margin-bottom: 6px; color: var(--muted); }
+    .pathfield .inputwrap { display: flex; gap: 8px; }
+    .pathfield input {
+      flex: 1; width: 100%;
+      background: var(--panel-2); border: 1px solid var(--border); color: var(--text);
+      border-radius: 8px; padding: 9px 10px; font-size: 14px;
+    }
+    .pathfield input.dropover { border-color: var(--accent); background: #232a3a; }
+    .browseBtn {
+      border: 1px solid var(--border); background: var(--panel-2); color: var(--text);
+      border-radius: 8px; padding: 8px 14px; font-size: 13px; cursor: pointer; white-space: nowrap;
+    }
+    .browseBtn:hover { background: #2a3040; }
+
+    .dropzone {
+      border: 2px dashed var(--border); border-radius: 12px; padding: 26px 18px;
+      text-align: center; cursor: pointer; transition: border-color .15s, background .15s; margin-top: 4px;
+    }
+    .dropzone:hover { border-color: var(--accent); }
+    .dropzone.dropover { border-color: var(--accent); background: #232a3a; }
+    .dropzone .big { font-size: 15px; }
+    .dropzone .sub { color: var(--muted); font-size: 12px; margin-top: 6px; }
+    .dz-actions { margin-top: 14px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+
+    .filelist { margin-top: 12px; font-size: 13px; color: var(--muted); }
+    .filelist .summary { color: var(--text); margin-bottom: 6px; }
+    .filelist .names {
+      max-height: 120px; overflow-y: auto; background: var(--panel-2); border: 1px solid var(--border);
+      border-radius: 8px; padding: 8px 10px; line-height: 1.7; word-break: break-all;
+    }
+    .filelist .names span + span::before { content: "、"; color: var(--muted); }
+
+    .wrap { display: grid; grid-template-columns: 380px 1fr; gap: 18px; padding: 18px 24px; align-items: start; max-width: 1280px; margin: 0 auto; }
     @media (max-width: 760px) { .wrap { grid-template-columns: 1fr; } }
-    .panel {
-      background: var(--panel);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 16px;
-    }
+    .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 16px; }
     .panel h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 12px; }
     .field { margin-bottom: 14px; }
     .field label { display: block; font-size: 13px; margin-bottom: 6px; color: var(--muted); }
     .field input[type=number], .field select {
-      width: 100%;
-      background: var(--panel-2);
-      border: 1px solid var(--border);
-      color: var(--text);
-      border-radius: 8px;
-      padding: 8px 10px;
-      font-size: 14px;
+      width: 100%; background: var(--panel-2); border: 1px solid var(--border); color: var(--text);
+      border-radius: 8px; padding: 8px 10px; font-size: 14px;
     }
     .row { display: flex; align-items: center; gap: 8px; }
     .row input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--accent); }
-    .drop {
-      border: 2px dashed var(--border);
-      border-radius: 12px;
-      padding: 28px 16px;
-      text-align: center;
-      color: var(--muted);
-      cursor: pointer;
-      transition: border-color .15s, background .15s;
-    }
-    .drop:hover, .drop.over { border-color: var(--accent); background: rgba(91,140,255,.08); color: var(--text); }
     .btn {
-      width: 100%;
-      border: none;
-      border-radius: 8px;
-      padding: 11px 14px;
-      font-size: 14px;
-      font-weight: 600;
-      cursor: pointer;
-      background: var(--accent);
-      color: #fff;
+      width: 100%; border: none; border-radius: 8px; padding: 11px 14px; font-size: 14px; font-weight: 600;
+      cursor: pointer; background: var(--accent); color: #fff;
     }
     .btn:hover { background: var(--accent-2); }
     .btn:disabled { background: #2a2f3a; color: var(--muted); cursor: not-allowed; }
     .btn.secondary { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); }
     .btn.secondary:hover { background: #2a3040; }
-    .files { margin-top: 12px; max-height: 220px; overflow: auto; }
-    .file {
-      display: flex; justify-content: space-between; align-items: center;
-      padding: 7px 10px; border-radius: 8px; background: var(--panel-2);
-      margin-bottom: 6px; font-size: 13px;
-    }
-    .file button { background: none; border: none; color: #ff7b7b; cursor: pointer; font-size: 13px; }
-    .status { margin-top: 12px; font-size: 13px; color: var(--muted); min-height: 18px; }
+    .status { margin-top: 12px; font-size: 13px; color: var(--muted); min-height: 18px; white-space: pre-wrap; word-break: break-all; }
     .status.ok { color: #7bdc8b; }
     .status.err { color: #ff7b7b; }
     .preview {
@@ -102,36 +108,75 @@
         linear-gradient(45deg, transparent 75%, #15171d 75%) 0 0/20px 20px,
         linear-gradient(-45deg, transparent 75%, #15171d 75%) 0 0/20px 20px,
         var(--panel);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      min-height: 360px;
-      display: flex; align-items: center; justify-content: center;
-      overflow: hidden;
+      border: 1px solid var(--border); border-radius: 12px; min-height: 360px;
+      display: flex; align-items: center; justify-content: center; overflow: auto;
     }
-    .preview img { max-width: 100%; max-height: 70vh; image-rendering: pixelated; }
-    .preview .empty { color: var(--muted); font-size: 14px; }
+    .preview img { max-width: 100%; image-rendering: pixelated; }
+    .preview .empty { color: var(--muted); font-size: 14px; text-align: center; padding: 20px; }
     .meta { margin-top: 12px; font-size: 13px; color: var(--muted); }
     .meta b { color: var(--text); }
+    .hintline { color: var(--muted); font-size: 12px; margin-top: 8px; }
   </style>
 </head>
 <body>
   <header>
     <h1>KTexturePacker</h1>
     <span>图集打包 · 基于 ASP.NET Core + MaxRects</span>
+    <div class="modeToggle">
+      <button id="modeLocal" class="active" type="button">本地模式</button>
+      <button id="modeRemote" type="button">远程模式</button>
+    </div>
   </header>
+
+  <!-- 顶部输入区 -->
+  <div class="topbar">
+    <div class="topbar-inner">
+      <!-- 本地模式：输入/输出文件夹 -->
+      <div id="localPanel">
+        <div class="field-row">
+          <div class="pathfield">
+            <label>输入文件夹</label>
+            <div class="inputwrap">
+              <input id="inputFolder" type="text" placeholder="如 D:\textures\in" />
+              <button class="browseBtn" id="browseInput" type="button">浏览…</button>
+            </div>
+          </div>
+          <div class="pathfield">
+            <label>输出文件夹</label>
+            <div class="inputwrap">
+              <input id="outputFolder" type="text" placeholder="留空则与输入文件夹相同" />
+              <button class="browseBtn" id="browseOutput" type="button">浏览…</button>
+            </div>
+          </div>
+        </div>
+        <div class="hintline">本地模式适用于浏览器与服务器在同一台机器；路径是服务器（本机）磁盘路径。可直接把文件夹拖到输入框自动识别。</div>
+      </div>
+
+      <!-- 远程模式：上传图片/文件夹 -->
+      <div id="remotePanel" style="display:none">
+        <div id="dropzone" class="dropzone">
+          <div class="big">把图片或文件夹拖到这里</div>
+          <div class="sub">支持递归读取整个文件夹里的图片（png/jpg/gif/bmp/webp/tga）</div>
+          <div class="dz-actions">
+            <button type="button" class="browseBtn" id="pickFiles">选择图片文件</button>
+            <button type="button" class="browseBtn" id="pickFolder">选择文件夹</button>
+            <button type="button" class="browseBtn" id="clearFiles">清空</button>
+          </div>
+          <input id="filesInput" type="file" accept="image/png,image/jpeg,image/gif,image/webp,image/bmp" multiple hidden />
+          <input id="folderInput" type="file" webkitdirectory multiple hidden />
+        </div>
+        <div class="filelist" id="filelist" style="display:none">
+          <div class="summary" id="fileSummary"></div>
+          <div class="names" id="fileNames"></div>
+        </div>
+        <div class="hintline">远程模式适用於服务器在远端：图片会先上传到服务器再打包，不依赖本机路径。</div>
+      </div>
+    </div>
+  </div>
 
   <div class="wrap">
     <div class="panel">
-      <h2>图片</h2>
-      <div id="drop" class="drop">
-        点击选择，或把图片拖到这里<br />
-        <small>（支持多选 / 文件夹）</small>
-      </div>
-      <input id="fileInput" type="file" accept="image/*" multiple hidden />
-
-      <div id="files" class="files"></div>
-
-      <h2 style="margin-top:18px">参数</h2>
+      <h2>参数</h2>
       <div class="field">
         <label>最大边长 (px)</label>
         <input id="maxSize" type="number" value="2048" min="64" step="64" />
@@ -161,136 +206,389 @@
         <label style="margin:0">允许 90° 旋转（更高填充率）</label>
       </div>
 
-      <button id="packBtn" class="btn">打包并下载</button>
-      <button id="clearBtn" class="btn secondary" style="margin-top:8px">清空</button>
+      <button id="packBtn" class="btn">打包</button>
+      <button id="previewBtn" class="btn secondary" style="margin-top:8px">预览图集</button>
+      <button id="resetBtn" class="btn secondary" style="margin-top:8px">重置</button>
       <div id="status" class="status"></div>
     </div>
 
     <div>
       <div class="panel" style="padding:14px">
-        <div class="preview" id="preview"><span class="empty">打包后在此预览图集</span></div>
+        <div class="preview" id="preview"><span class="empty">设置好输入后点击「预览图集」查看效果</span></div>
         <div class="meta" id="meta"></div>
       </div>
     </div>
   </div>
 
+  <!-- 文件夹选择器 -->
+  <div id="picker" class="picker" style="display:none">
+    <div class="picker-box">
+      <div class="picker-head">
+        <span id="pickerTitle">选择文件夹</span>
+        <button type="button" id="pickerClose" class="browseBtn">关闭</button>
+      </div>
+      <div class="picker-bar">
+        <button type="button" id="pickerUp" class="browseBtn">上一级</button>
+        <span id="pickerPath" class="picker-path"></span>
+      </div>
+      <div id="pickerList" class="picker-list"></div>
+      <div class="picker-foot">
+        <button type="button" id="pickerSelect" class="btn" style="width:auto;padding:8px 18px">选择此文件夹</button>
+      </div>
+    </div>
+  </div>
+
+  <style>
+    .picker { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: flex; align-items: center; justify-content: center; z-index: 50; }
+    .picker-box { width: min(640px, 92vw); max-height: 80vh; background: var(--panel); border: 1px solid var(--border); border-radius: 12px; display: flex; flex-direction: column; }
+    .picker-head { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--border); }
+    .picker-bar { display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-bottom: 1px solid var(--border); }
+    .picker-path { color: var(--muted); font-size: 13px; word-break: break-all; }
+    .picker-list { overflow-y: auto; padding: 8px; flex: 1; min-height: 200px; }
+    .picker-item { padding: 9px 12px; border-radius: 8px; cursor: pointer; font-size: 14px; }
+    .picker-item:hover { background: var(--panel-2); }
+    .picker-foot { padding: 12px 16px; border-top: 1px solid var(--border); text-align: right; }
+  </style>
+
   <script>
-    const fileInput = document.getElementById('fileInput');
-    const drop = document.getElementById('drop');
-    const filesEl = document.getElementById('files');
+    let mode = 'local';
+
     const packBtn = document.getElementById('packBtn');
-    const clearBtn = document.getElementById('clearBtn');
+    const previewBtn = document.getElementById('previewBtn');
     const statusEl = document.getElementById('status');
     const preview = document.getElementById('preview');
     const meta = document.getElementById('meta');
 
-    let files = [];
+    function status(msg, cls) { statusEl.textContent = msg; statusEl.className = 'status' + (cls ? ' ' + cls : ''); }
+    function algoLabel() {
+      return ({ best: 'Best Short Side Fit', long: 'Best Long Side Fit', bottomleft: 'Bottom-Left', contact: 'Contact Point' })[document.getElementById('algorithm').value] || '';
+    }
+    function getParams() {
+      return {
+        maxSize: document.getElementById('maxSize').value,
+        padding: document.getElementById('padding').value,
+        algorithm: document.getElementById('algorithm').value,
+        allowRotation: document.getElementById('allowRotation').checked,
+        format: document.getElementById('format').value,
+      };
+    }
 
-    function renderFiles() {
-      filesEl.innerHTML = '';
-      files.forEach((f, i) => {
-        const row = document.createElement('div');
-        row.className = 'file';
-        const name = document.createElement('span');
-        name.textContent = f.name;
-        const del = document.createElement('button');
-        del.textContent = '✕';
-        del.onclick = () => { files.splice(i, 1); renderFiles(); };
-        row.appendChild(name); row.appendChild(del);
-        filesEl.appendChild(row);
+    function showPreviewBlob(blob, res) {
+      const url = URL.createObjectURL(blob);
+      preview.innerHTML = '';
+      const img = document.createElement('img');
+      img.src = url;
+      preview.appendChild(img);
+      const w = res.headers.get('X-Atlas-Width');
+      const h = res.headers.get('X-Atlas-Height');
+      const sc = res.headers.get('X-Sprite-Count');
+      const uc = parseInt(res.headers.get('X-Unplaced-Count') || '0', 10);
+      let txt = '图集 <b>' + w + '×' + h + '</b> · 已放置 <b>' + sc + '</b> 张';
+      if (uc > 0) txt += ' · <span style="color:#ffb86b">' + uc + ' 张放不下（调大最大边长或允许旋转）</span>';
+      txt += '<br/>算法：' + algoLabel();
+      meta.innerHTML = txt;
+    }
+
+    // ===== 模式切换 =====
+    function setMode(m) {
+      mode = m;
+      document.getElementById('modeLocal').classList.toggle('active', m === 'local');
+      document.getElementById('modeRemote').classList.toggle('active', m === 'remote');
+      document.getElementById('localPanel').style.display = m === 'local' ? '' : 'none';
+      document.getElementById('remotePanel').style.display = m === 'remote' ? '' : 'none';
+      status('', '');
+    }
+    document.getElementById('modeLocal').onclick = () => setMode('local');
+    document.getElementById('modeRemote').onclick = () => setMode('remote');
+
+    // ===== 本地模式：文件夹选择 + 拖拽识别目录 =====
+    function baseName(p) {
+      const norm = p.replace(/\\/g, '/');
+      const i = norm.lastIndexOf('/');
+      if (i >= 0 && i < p.length - 1) return p.slice(i + 1);
+      return p;
+    }
+    function normalizeNativePath(p) {
+      if (p.startsWith('/') && /^[A-Za-z]:/.test(p.slice(1))) return p.slice(1);
+      return p;
+    }
+    function pathDir(p) {
+      const i = Math.max(p.lastIndexOf('/'), p.lastIndexOf('\\'));
+      return i > 0 ? p.slice(0, i) : p;
+    }
+    function isCompletePath(p) {
+      if (!p) return false;
+      return /^[A-Za-z]:[\\/]/.test(p) || /^\\\\/.test(p);
+    }
+
+    [['inputFolder', 'browseInput'], ['outputFolder', 'browseOutput']].forEach(([inp, btn]) => {
+      const inputEl = document.getElementById(inp);
+      bindDropFolder(inputEl);
+      document.getElementById(btn).onclick = () => openPicker(inputEl);
+    });
+
+    function bindDropFolder(inputEl) {
+      inputEl.addEventListener('dragover', e => { e.preventDefault(); inputEl.classList.add('dropover'); });
+      inputEl.addEventListener('dragleave', e => { e.preventDefault(); inputEl.classList.remove('dropover'); });
+      inputEl.addEventListener('drop', e => {
+        e.preventDefault();
+        inputEl.classList.remove('dropover');
+        const files = e.dataTransfer.files;
+        const items = e.dataTransfer.items;
+        let dirPath = '';
+        let rawDetail = '';
+        if (files && files.length && files[0].path) {
+          const d = pathDir(files[0].path);
+          if (isCompletePath(d)) dirPath = d; else rawDetail = files[0].path;
+        }
+        if (!dirPath && items && items.length && items[0].webkitGetAsEntry) {
+          const en = items[0].webkitGetAsEntry();
+          if (en && en.fullPath) {
+            const d = pathDir(normalizeNativePath(en.fullPath));
+            if (isCompletePath(d)) dirPath = d; else if (!rawDetail) rawDetail = en.fullPath;
+          }
+        }
+        if (dirPath) { inputEl.value = dirPath; status('', ''); }
+        else {
+          const got = rawDetail ? '（得到的是不完整路径：' + rawDetail + '）' : '（浏览器未提供完整本地路径）';
+          status('无法从拖拽获取完整文件夹路径' + got + '\n已打开文件夹选择器，请从中选择。', 'err');
+          openPicker(inputEl);
+        }
       });
-      packBtn.disabled = files.length === 0;
     }
 
+    // 文件夹选择器（服务器端目录浏览）
+    let pickerTarget = null;
+    let pickerCurrent = '';
+    const picker = document.getElementById('picker');
+    document.getElementById('pickerClose').onclick = () => picker.style.display = 'none';
+    document.getElementById('pickerSelect').onclick = () => {
+      if (pickerTarget) pickerTarget.value = pickerCurrent || '';
+      picker.style.display = 'none';
+    };
+    document.getElementById('pickerUp').onclick = () => loadDirs(pickerParent);
+    let pickerParent = '';
+    async function loadDirs(path) {
+      const res = await fetch('/api/dirs?path=' + encodeURIComponent(path || ''));
+      if (!res.ok) { status('读取目录失败: ' + (await res.text()), 'err'); return; }
+      const data = await res.json();
+      pickerCurrent = data.current;
+      pickerParent = data.parent;
+      document.getElementById('pickerPath').textContent = pickerCurrent || '（计算机根目录）';
+      const list = document.getElementById('pickerList');
+      list.innerHTML = '';
+      (data.dirs || []).forEach(d => {
+        const div = document.createElement('div');
+        div.className = 'picker-item';
+        div.textContent = baseName(d) || d;
+        div.onclick = () => loadDirs(d);
+        list.appendChild(div);
+      });
+      picker.style.display = 'flex';
+    }
+    function openPicker(inputEl) {
+      pickerTarget = inputEl;
+      loadDirs(pickerCurrent || '');
+    }
+
+    // ===== 远程模式：上传 =====
+    const dropzone = document.getElementById('dropzone');
+    const filesInput = document.getElementById('filesInput');
+    const folderInput = document.getElementById('folderInput');
+    const filelist = document.getElementById('filelist');
+    const fileSummary = document.getElementById('fileSummary');
+    const fileNames = document.getElementById('fileNames');
+    let selectedFiles = [];
+    const fileKeys = new Set();
+
+    function isImageFile(name) { return /\.(png|jpe?g|gif|bmp|webp|tga)$/i.test(name); }
+    function formatBytes(n) {
+      if (n < 1024) return n + ' B';
+      if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+      return (n / 1024 / 1024).toFixed(1) + ' MB';
+    }
     function addFiles(list) {
+      let added = 0;
       for (const f of list) {
-        if (f.type.startsWith('image/') || /\.(png|jpe?g|gif|bmp|webp|tga)$/i.test(f.name))
-          files.push(f);
+        const key = f.name + '|' + f.size;
+        if (fileKeys.has(key)) continue;
+        fileKeys.add(key); selectedFiles.push(f); added++;
       }
-      renderFiles();
+      if (added) renderFileList();
+      refreshButtons();
+    }
+    function renderFileList() {
+      const total = selectedFiles.reduce((a, f) => a + f.size, 0);
+      fileSummary.textContent = '已选择 ' + selectedFiles.length + ' 张图片 · 共 ' + formatBytes(total);
+      fileNames.innerHTML = '';
+      selectedFiles.slice(0, 60).forEach(f => {
+        const s = document.createElement('span'); s.textContent = f.name; fileNames.appendChild(s);
+      });
+      if (selectedFiles.length > 60) {
+        const s = document.createElement('span'); s.textContent = '…等 ' + selectedFiles.length + ' 张'; fileNames.appendChild(s);
+      }
+      filelist.style.display = selectedFiles.length ? 'block' : 'none';
+    }
+    async function readEntry(entry, out) {
+      if (entry.isFile) { await new Promise(res => entry.file(f => { if (f && isImageFile(f.name)) out.push(f); res(); })); }
+      else if (entry.isDirectory) {
+        const reader = entry.createReader();
+        let batch;
+        do { batch = await new Promise(res => reader.readEntries(res)); for (const e of batch) await readEntry(e, out); } while (batch.length > 0);
+      }
+    }
+    dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('dropover'); });
+    dropzone.addEventListener('dragleave', e => { e.preventDefault(); dropzone.classList.remove('dropover'); });
+    dropzone.addEventListener('drop', async e => {
+      e.preventDefault(); dropzone.classList.remove('dropover');
+      const items = e.dataTransfer.items; const collected = [];
+      if (items && items.length && items[0].webkitGetAsEntry) {
+        const entries = [];
+        for (const it of items) { const en = it.webkitGetAsEntry(); if (en) entries.push(en); }
+        for (const en of entries) await readEntry(en, collected);
+      } else if (e.dataTransfer.files && e.dataTransfer.files.length) {
+        for (const f of e.dataTransfer.files) if (isImageFile(f.name)) collected.push(f);
+      }
+      if (collected.length) addFiles(collected); else status('拖入的内容里没有图片文件。', 'err');
+    });
+    dropzone.addEventListener('click', e => {
+      if (e.target === dropzone || e.target.classList.contains('big') || e.target.classList.contains('sub')) filesInput.click();
+    });
+    document.getElementById('pickFiles').onclick = e => { e.stopPropagation(); filesInput.click(); };
+    document.getElementById('pickFolder').onclick = e => { e.stopPropagation(); folderInput.click(); };
+    document.getElementById('clearFiles').onclick = e => {
+      e.stopPropagation(); selectedFiles = []; fileKeys.clear(); renderFileList(); refreshButtons(); status('', '');
+    };
+    filesInput.onchange = () => { addFiles(Array.from(filesInput.files).filter(f => isImageFile(f.name))); filesInput.value = ''; };
+    folderInput.onchange = () => { addFiles(Array.from(folderInput.files).filter(f => isImageFile(f.name))); folderInput.value = ''; };
+
+    function refreshButtons() {
+      const ready = mode === 'local'
+        ? document.getElementById('inputFolder').value.trim().length > 0
+        : selectedFiles.length > 0;
+      packBtn.disabled = !ready;
+      previewBtn.disabled = !ready;
     }
 
-    drop.onclick = () => fileInput.click();
-    fileInput.onchange = () => { addFiles(fileInput.files); fileInput.value = ''; };
-
-    ['dragenter', 'dragover'].forEach(ev =>
-      drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); }));
-    ['dragleave', 'drop'].forEach(ev =>
-      drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over'); }));
-    drop.addEventListener('drop', e => { addFiles(e.dataTransfer.files); });
-
-    clearBtn.onclick = () => { files = []; renderFiles(); preview.innerHTML = '<span class="empty">打包后在此预览图集</span>'; meta.textContent = ''; status('', ''); };
-
-    function status(msg, cls) {
-      statusEl.textContent = msg;
-      statusEl.className = 'status' + (cls ? ' ' + cls : '');
+    // 重置：清空路径/已选文件/参数/预览/状态，恢复到默认
+    const resetBtn = document.getElementById('resetBtn');
+    function resetAll() {
+      document.getElementById('inputFolder').value = '';
+      document.getElementById('outputFolder').value = '';
+      selectedFiles = []; fileKeys.clear(); renderFileList();
+      document.getElementById('maxSize').value = 2048;
+      document.getElementById('padding').value = 1;
+      document.getElementById('algorithm').value = 'best';
+      document.getElementById('format').value = 'json';
+      document.getElementById('allowRotation').checked = false;
+      preview.innerHTML = '<span class="empty">设置好输入后点击「预览图集」查看效果</span>';
+      meta.innerHTML = '';
+      status('', '');
+      refreshButtons();
     }
+    resetBtn.onclick = resetAll;
+    ['inputFolder', 'outputFolder'].forEach(id => document.getElementById(id).addEventListener('input', refreshButtons));
+
+    // ===== 预览 / 打包 =====
+    async function doPreview() {
+      if (mode === 'local') {
+        const inp = document.getElementById('inputFolder').value.trim();
+        if (!inp) return;
+        previewBtn.disabled = true; status('预览生成中…', '');
+        try {
+          const p = new URLSearchParams({ inputFolder: inp, outputFolder: document.getElementById('outputFolder').value.trim(),
+            maxSize: document.getElementById('maxSize').value, padding: document.getElementById('padding').value,
+            algorithm: document.getElementById('algorithm').value, allowRotation: document.getElementById('allowRotation').checked });
+          const res = await fetch('/api/preview-local?' + p.toString());
+          if (!res.ok) { status('预览失败：' + (await res.text()), 'err'); return; }
+          showPreviewBlob(await res.blob(), res);
+          status('预览已生成（未写入磁盘）。', 'ok');
+        } catch (e) { status('错误：' + e.message, 'err'); }
+        finally { previewBtn.disabled = false; }
+      } else {
+        if (!selectedFiles.length) return;
+        previewBtn.disabled = true; status('预览生成中…', '');
+        try {
+          const fd = buildForm();
+          const res = await fetch('/api/preview', { method: 'POST', body: fd });
+          if (!res.ok) { status('预览失败：' + (await res.text() || res.status), 'err'); return; }
+          showPreviewBlob(await res.blob(), res);
+          status('预览已生成（未下载）。', 'ok');
+        } catch (e) { status('错误：' + e.message, 'err'); }
+        finally { previewBtn.disabled = false; }
+      }
+    }
+
+    previewBtn.onclick = doPreview;
+    document.getElementById('algorithm').addEventListener('change', () => {
+      if (mode === 'local' ? document.getElementById('inputFolder').value.trim() : selectedFiles.length) doPreview();
+    });
 
     packBtn.onclick = async () => {
-      if (files.length === 0) return;
-      packBtn.disabled = true;
-      status('打包中…', '');
-
-      const fd = new FormData();
-      files.forEach(f => fd.append('files', f, f.name));
-      fd.append('maxSize', document.getElementById('maxSize').value);
-      fd.append('padding', document.getElementById('padding').value);
-      fd.append('algorithm', document.getElementById('algorithm').value);
-      fd.append('format', document.getElementById('format').value);
-      fd.append('allowRotation', document.getElementById('allowRotation').checked);
-
-      try {
-        const res = await fetch('/api/pack', { method: 'POST', body: fd });
-        if (!res.ok) {
+      if (mode === 'local') {
+        const inp = document.getElementById('inputFolder').value.trim();
+        const out = document.getElementById('outputFolder').value.trim();
+        if (!inp) return;
+        if (!out) { status('本地模式请填写输出文件夹。', 'err'); return; }
+        packBtn.disabled = true; status('打包中…', '');
+        try {
+          const p = new URLSearchParams({ inputFolder: inp, outputFolder: out, maxSize: document.getElementById('maxSize').value,
+            padding: document.getElementById('padding').value, algorithm: document.getElementById('algorithm').value,
+            allowRotation: document.getElementById('allowRotation').checked, format: document.getElementById('format').value });
+          const res = await fetch('/api/pack-local?' + p.toString());
           const txt = await res.text();
-          status('失败: ' + (txt || res.status), 'err');
-          return;
-        }
-        const blob = await res.blob();
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url; a.download = 'atlas.zip'; a.click();
-        URL.revokeObjectURL(url);
-
-        // 预览图集：从 zip 里取 atlas.png
-        const pngUrl = await extractPngFromZip(blob);
-        if (pngUrl) {
-          preview.innerHTML = '';
-          const img = document.createElement('img');
-          img.src = pngUrl;
-          preview.appendChild(img);
-          meta.innerHTML = '<b>' + files.length + '</b> 张精灵已打包 · 下载的 zip 含 <b>atlas.png</b> + 描述文件';
-        }
-        status('完成，已下载 atlas.zip', 'ok');
-      } catch (e) {
-        status('错误: ' + e.message, 'err');
-      } finally {
-        packBtn.disabled = false;
+          if (!res.ok) status('失败: ' + txt, 'err');
+          else { status('完成。\n' + txt, 'ok'); doPreview(); }
+        } catch (e) { status('错误: ' + e.message, 'err'); }
+        finally { packBtn.disabled = false; }
+      } else {
+        if (!selectedFiles.length) return;
+        packBtn.disabled = true; status('打包中…', '');
+        try {
+          const res = await fetch('/api/pack', { method: 'POST', body: buildForm() });
+          if (!res.ok) { status('失败: ' + (await res.text() || res.status), 'err'); return; }
+          const blob = await res.blob();
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a'); a.href = url; a.download = 'atlas.zip';
+          document.body.appendChild(a); a.click(); a.remove();
+          status('完成，已下载 atlas.zip（含 atlas.png + 描述文件）。', 'ok');
+          doPreview();
+        } catch (e) { status('错误: ' + e.message, 'err'); }
+        finally { packBtn.disabled = false; }
       }
     };
 
-    async function extractPngFromZip(blob) {
+    function buildForm() {
+      const fd = new FormData();
+      for (const f of selectedFiles) fd.append('files', f, f.name);
+      const p = getParams();
+      fd.append('maxSize', p.maxSize); fd.append('padding', p.padding);
+      fd.append('algorithm', p.algorithm); fd.append('allowRotation', p.allowRotation); fd.append('format', p.format);
+      return fd;
+    }
+
+    // 自动判定模式：服务器是否和浏览器同机。
+    // 本地模式需要服务器按磁盘路径读盘，仅当服务本机（localhost/回环）才有意义。
+    const modeLocalBtn = document.getElementById('modeLocal');
+    (async () => {
       try {
-        const buf = await blob.arrayBuffer();
-        const zip = await (window.JSZip ? Promise.resolve() : loadJsZip()).then(() => window.JSZip.loadAsync(buf));
-        const png = zip.file('atlas.png');
-        if (!png) return null;
-        const data = await png.async('blob');
-        return URL.createObjectURL(data);
-      } catch { return null; }
-    }
+        const r = await fetch('/api/mode');
+        if (!r.ok) return;
+        const j = await r.json();
+        if (j.local) {
+          setMode('local');
+          modeLocalBtn.disabled = false;
+        } else {
+          setMode('remote');           // 远程：强制上传模式
+          modeLocalBtn.disabled = true; // 禁用本地模式（服务器在别处，读不到你的磁盘）
+          modeLocalBtn.title = '本地模式需要服务运行在本机（通过 localhost 访问）';
+        }
+      } catch {
+        // 检测失败则保留默认（本地）模式，用户可手动切换
+      }
+    })();
 
-    function loadJsZip() {
-      return new Promise((resolve, reject) => {
-        const s = document.createElement('script');
-        s.src = 'https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js';
-        s.onload = () => resolve();
-        s.onerror = reject;
-        document.head.appendChild(s);
-      });
-    }
-
-    renderFiles();
+    refreshButtons();
   </script>
 </body>
 </html>
