@@ -134,6 +134,40 @@ static bool IsToolOutput(string name)
     return System.Text.RegularExpressions.Regex.IsMatch(name, @"^atlas_\d+\.png$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 }
 
+// 清理图集名字中的文件系统非法字符，避免写盘失败。
+static string SanitizeAtlasName(string name)
+{
+    if (string.IsNullOrWhiteSpace(name)) return "";
+    var sb = new System.Text.StringBuilder(name.Length);
+    foreach (char c in name.Trim())
+    {
+        // Windows 文件名非法字符：\ / : * ? " < > |
+        if (c is '\\' or '/' or ':' or '*' or '?' or '"' or '<' or '>' or '|')
+            sb.Append('_');
+        else
+            sb.Append(c);
+    }
+    string s = sb.ToString().Trim('_', '.', ' ');
+    return s.Length == 0 ? "" : s;
+}
+
+// 解析最终使用的图集名（前缀）：优先用用户给定值；否则取输出/输入文件夹的最后一段目录名；兜底 "atlas"。
+static string ResolveAtlasName(string? given, string? outputFolder, string? inputFolder)
+{
+    string? name = string.IsNullOrWhiteSpace(given) ? null : SanitizeAtlasName(given);
+    if (string.IsNullOrEmpty(name))
+    {
+        string? src = !string.IsNullOrWhiteSpace(outputFolder) ? outputFolder
+                   : !string.IsNullOrWhiteSpace(inputFolder) ? inputFolder : null;
+        if (!string.IsNullOrWhiteSpace(src))
+        {
+            var di = new DirectoryInfo(src.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+            name = SanitizeAtlasName(di.Name);
+        }
+    }
+    return string.IsNullOrEmpty(name) ? "atlas" : name;
+}
+
 static (List<MemoryStream> Pngs, List<PackingResult> Pages, string? Error) BuildAtlasFromFiles(
     IEnumerable<IFormFile> files, PackerSettings settings)
 {
@@ -282,28 +316,29 @@ static JsonObject RenderPreviewPages(IReadOnlyList<MemoryStream> pngs, int previ
     return new JsonObject { ["pages"] = arr, ["count"] = arr.Count };
 }
 
-// 写入服务器磁盘：atlas_0.png … atlas_N-1.png + 单个 atlas.atlas.json（含所有 page）
-static string WriteAtlasToDisk(List<PackingResult> pages, List<MemoryStream> pngs, string outputFolder)
+// 写入服务器磁盘：{atlasName}_0.png … + 单个 {atlasName}.atlas.json（含所有 page）
+static string WriteAtlasToDisk(List<PackingResult> pages, List<MemoryStream> pngs, string outputFolder, string atlasName)
 {
     if (!Directory.Exists(outputFolder)) Directory.CreateDirectory(outputFolder);
     var imageNames = new List<string>();
     for (int i = 0; i < pages.Count; i++)
     {
-        var imgName = "atlas_" + i + ".png";
+        var imgName = atlasName + "_" + i + ".png";
         imageNames.Add(imgName);
         var pngPath = Path.Combine(outputFolder, imgName);
         using (var fs = File.OpenWrite(pngPath)) { pngs[i].Position = 0; pngs[i].CopyTo(fs); }
     }
     var desc = AtlasExporter.ToAtlas(pages, imageNames);
-    File.WriteAllText(Path.Combine(outputFolder, "atlas.atlas.json"), desc);
-    return Path.Combine(outputFolder, "atlas.atlas.json");
+    string descPath = Path.Combine(outputFolder, atlasName + ".atlas.json");
+    File.WriteAllText(descPath, desc);
+    return descPath;
 }
 
-// 打包成 zip：atlas_0.png … + 单个 atlas.atlas.json
-static MemoryStream ZipAtlas(List<PackingResult> pages, List<MemoryStream> pngs)
+// 打包成 zip：{atlasName}_0.png … + 单个 {atlasName}.atlas.json，返回 zip 流与下载文件名
+static (MemoryStream zip, string fileName) ZipAtlas(List<PackingResult> pages, List<MemoryStream> pngs, string atlasName)
 {
     var imageNames = new List<string>();
-    for (int i = 0; i < pages.Count; i++) imageNames.Add("atlas_" + i + ".png");
+    for (int i = 0; i < pages.Count; i++) imageNames.Add(atlasName + "_" + i + ".png");
     var desc = AtlasExporter.ToAtlas(pages, imageNames);
 
     var zip = new MemoryStream();
@@ -316,13 +351,13 @@ static MemoryStream ZipAtlas(List<PackingResult> pages, List<MemoryStream> pngs)
             pngs[i].Position = 0;
             pngs[i].CopyTo(zs);
         }
-        var descEntry = archive.CreateEntry("atlas.atlas.json");
+        var descEntry = archive.CreateEntry(atlasName + ".atlas.json");
         using (var zs = descEntry.Open())
         using (var w = new StreamWriter(zs))
             w.Write(desc);
     }
     zip.Position = 0;
-    return zip;
+    return (zip, atlasName + ".zip");
 }
 
 void SetMetaHeaders(HttpContext ctx, IReadOnlyList<PackingResult> pages)
@@ -383,9 +418,10 @@ app.MapPost("/api/pack", async (HttpContext ctx) =>
         return Results.Text($"有 {unplaced} 张图片无法放入（可能单张超过最大边长），请调大 maxSize 或拆分。", "text/plain; charset=utf-8", statusCode: 400);
     }
 
-    var zip = ZipAtlas(pages, pngs);
+    var atlasName = ResolveAtlasName(form["atlasName"], null, null);
+    var (zip, fileName) = ZipAtlas(pages, pngs, atlasName);
     foreach (var p in pngs) p.Dispose();
-    return Results.File(zip, "application/zip", "atlas.zip");
+    return Results.File(zip, "application/zip", fileName);
 });
 
 // ---------- 本地模式：文件夹路径 ----------
@@ -406,6 +442,7 @@ app.MapGet("/api/preview-local", (HttpContext ctx, string? inputFolder, string? 
         return Results.Text(error, "text/plain; charset=utf-8", statusCode: 400);
 
     SetMetaHeaders(ctx, pages);
+    ctx.Response.Headers["X-Atlas-Name"] = ResolveAtlasName(ctx.Request.Query["atlasName"], outputFolder, inputFolder);
     int pv = previewMax is > 0 ? previewMax.Value : 512;
     var json = RenderPreviewPages(pngs, pv);
     foreach (var p in pngs) p.Dispose();
@@ -413,7 +450,7 @@ app.MapGet("/api/preview-local", (HttpContext ctx, string? inputFolder, string? 
 });
 
 // 本地模式：输入/输出文件夹路径 -> 写入服务器磁盘（GET，参数走 query）
-app.MapGet("/api/pack-local", (string? inputFolder, string? outputFolder, int? maxSize, int? padding, string? algorithm, bool? allowRotation) =>
+app.MapGet("/api/pack-local", (HttpContext ctx, string? inputFolder, string? outputFolder, int? maxSize, int? padding, string? algorithm, bool? allowRotation) =>
 {
     var settings = new PackerSettings
     {
@@ -434,9 +471,10 @@ app.MapGet("/api/pack-local", (string? inputFolder, string? outputFolder, int? m
         return Results.Text($"有 {unplaced} 张图片无法放入（可能单张超过最大边长），请调大 maxSize 或拆分。", "text/plain; charset=utf-8", statusCode: 400);
     }
 
-    var atlasPath = WriteAtlasToDisk(pages, pngs, outputFolder!);
+    var atlasName = ResolveAtlasName(ctx.Request.Query["atlasName"], outputFolder, inputFolder);
+    var atlasPath = WriteAtlasToDisk(pages, pngs, outputFolder!, atlasName);
     foreach (var p in pngs) p.Dispose();
-    return Results.Text("已生成图集：" + atlasPath + "（" + pages.Count + " 页）", "text/plain; charset=utf-8");
+    return Results.Text("已生成图集：" + atlasPath + "（" + pages.Count + " 页，前缀 " + atlasName + "）", "text/plain; charset=utf-8");
 });
 
 app.Run();

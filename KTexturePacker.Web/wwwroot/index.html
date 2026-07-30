@@ -203,6 +203,11 @@
         <label style="margin:0">允许 90° 旋转（更高填充率）</label>
       </div>
       <div class="field">
+        <label>图集名字（前缀）</label>
+        <input id="atlasName" type="text" placeholder="留空则默认用输出文件夹名" />
+        <small style="color:#8a93a6;display:block;margin-top:2px">用于导出文件前缀：{名字}_0.png、{名字}.atlas.json</small>
+      </div>
+      <div class="field">
         <label>预览最大边长 (px)</label>
         <input id="previewMax" type="number" value="512" min="64" step="64" />
         <small style="color:#8a93a6;display:block;margin-top:2px">超过此边长的图集会切成多页预览（值越小页越多）</small>
@@ -271,6 +276,7 @@
         padding: document.getElementById('padding').value,
         algorithm: document.getElementById('algorithm').value,
         allowRotation: document.getElementById('allowRotation').checked,
+        atlasName: document.getElementById('atlasName').value.trim(),
       };
     }
 
@@ -304,6 +310,8 @@
       if (pagesH > 1) txt += ' · 共 <b>' + pagesH + '</b> 个图集页';
       if (uc > 0) txt += ' · <span style="color:#ffb86b">' + uc + ' 张放不下（调大最大边长或允许旋转）</span>';
       txt += '<br/>算法：' + algoLabel();
+      const an = res.headers.get('X-Atlas-Name');
+      if (an) txt += '<br/>导出前缀：<b>' + an + '</b>';
       meta.innerHTML = txt;
     }
 
@@ -503,6 +511,7 @@
       document.getElementById('algorithm').value = 'best';
       document.getElementById('allowRotation').checked = false;
       document.getElementById('previewMax').value = 512;
+      document.getElementById('atlasName').value = '';
       preview.innerHTML = '<span class="empty">设置好输入后点击「预览图集」查看效果</span>';
       meta.innerHTML = '';
       status('', '');
@@ -521,6 +530,7 @@
           const p = new URLSearchParams({ inputFolder: inp, outputFolder: document.getElementById('outputFolder').value.trim(),
             maxSize: document.getElementById('maxSize').value, padding: document.getElementById('padding').value,
             algorithm: document.getElementById('algorithm').value, allowRotation: document.getElementById('allowRotation').checked,
+            atlasName: document.getElementById('atlasName').value.trim(),
             previewMax: document.getElementById('previewMax').value });
           p.append('_', Date.now().toString());
           const res = await fetch('/api/preview-local?' + p.toString());
@@ -560,7 +570,8 @@
         try {
           const p = new URLSearchParams({ inputFolder: inp, outputFolder: out, maxSize: document.getElementById('maxSize').value,
             padding: document.getElementById('padding').value, algorithm: document.getElementById('algorithm').value,
-            allowRotation: document.getElementById('allowRotation').checked });
+            allowRotation: document.getElementById('allowRotation').checked,
+            atlasName: document.getElementById('atlasName').value.trim() });
           const res = await fetch('/api/pack-local?' + p.toString());
           const txt = await res.text();
           if (!res.ok) status('失败: ' + txt, 'err');
@@ -571,13 +582,16 @@
         if (!selectedFiles.length) return;
         packBtn.disabled = true; status('打包中…', '');
         try {
+          const an = getParams().atlasName;
           const res = await fetch('/api/pack', { method: 'POST', body: buildForm() });
           if (!res.ok) { status('失败: ' + (await res.text() || res.status), 'err'); return; }
           const blob = await res.blob();
           const url = URL.createObjectURL(blob);
-          const a = document.createElement('a'); a.href = url; a.download = 'atlas.zip';
+          const a = document.createElement('a'); a.href = url;
+          a.download = an ? an + '.zip' : 'atlas.zip';
           document.body.appendChild(a); a.click(); a.remove();
-          status('完成，已下载 atlas.zip（含 atlas_0.png… 与单一 atlas.atlas.json，多页自动分图）。', 'ok');
+          const base = an || 'atlas';
+          status('完成，已下载 ' + base + '.zip（含 ' + base + '_0.png… 与单一 ' + base + '.atlas.json，多页自动分图）。', 'ok');
           doPreview();
         } catch (e) { status('错误: ' + e.message, 'err'); }
         finally { packBtn.disabled = false; }
@@ -590,6 +604,7 @@
       const p = getParams();
       fd.append('maxSize', p.maxSize); fd.append('padding', p.padding);
       fd.append('algorithm', p.algorithm); fd.append('allowRotation', p.allowRotation);
+      fd.append('atlasName', p.atlasName);
       return fd;
     }
 
