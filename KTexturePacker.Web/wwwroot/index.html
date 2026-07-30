@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>KTexturePacker · 图集打包</title>
+  <style>
+    :root {
+      --bg: #0f1115;
+      --panel: #181b22;
+      --panel-2: #20242e;
+      --accent: #5b8cff;
+      --accent-2: #3f6fe0;
+      --text: #e8eaf0;
+      --muted: #9aa3b2;
+      --border: #2a2f3a;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+    header {
+      padding: 18px 24px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: baseline;
+      gap: 12px;
+    }
+    header h1 { font-size: 18px; margin: 0; }
+    header span { color: var(--muted); font-size: 13px; }
+    .wrap {
+      display: grid;
+      grid-template-columns: 320px 1fr;
+      gap: 18px;
+      padding: 18px 24px;
+      align-items: start;
+    }
+    @media (max-width: 760px) { .wrap { grid-template-columns: 1fr; } }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px;
+    }
+    .panel h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 12px; }
+    .field { margin-bottom: 14px; }
+    .field label { display: block; font-size: 13px; margin-bottom: 6px; color: var(--muted); }
+    .field input[type=number], .field select {
+      width: 100%;
+      background: var(--panel-2);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 8px;
+      padding: 8px 10px;
+      font-size: 14px;
+    }
+    .row { display: flex; align-items: center; gap: 8px; }
+    .row input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--accent); }
+    .drop {
+      border: 2px dashed var(--border);
+      border-radius: 12px;
+      padding: 28px 16px;
+      text-align: center;
+      color: var(--muted);
+      cursor: pointer;
+      transition: border-color .15s, background .15s;
+    }
+    .drop:hover, .drop.over { border-color: var(--accent); background: rgba(91,140,255,.08); color: var(--text); }
+    .btn {
+      width: 100%;
+      border: none;
+      border-radius: 8px;
+      padding: 11px 14px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      background: var(--accent);
+      color: #fff;
+    }
+    .btn:hover { background: var(--accent-2); }
+    .btn:disabled { background: #2a2f3a; color: var(--muted); cursor: not-allowed; }
+    .btn.secondary { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); }
+    .btn.secondary:hover { background: #2a3040; }
+    .files { margin-top: 12px; max-height: 220px; overflow: auto; }
+    .file {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 7px 10px; border-radius: 8px; background: var(--panel-2);
+      margin-bottom: 6px; font-size: 13px;
+    }
+    .file button { background: none; border: none; color: #ff7b7b; cursor: pointer; font-size: 13px; }
+    .status { margin-top: 12px; font-size: 13px; color: var(--muted); min-height: 18px; }
+    .status.ok { color: #7bdc8b; }
+    .status.err { color: #ff7b7b; }
+    .preview {
+      background:
+        linear-gradient(45deg, #15171d 25%, transparent 25%) 0 0/20px 20px,
+        linear-gradient(-45deg, #15171d 25%, transparent 25%) 0 0/20px 20px,
+        linear-gradient(45deg, transparent 75%, #15171d 75%) 0 0/20px 20px,
+        linear-gradient(-45deg, transparent 75%, #15171d 75%) 0 0/20px 20px,
+        var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      min-height: 360px;
+      display: flex; align-items: center; justify-content: center;
+      overflow: hidden;
+    }
+    .preview img { max-width: 100%; max-height: 70vh; image-rendering: pixelated; }
+    .preview .empty { color: var(--muted); font-size: 14px; }
+    .meta { margin-top: 12px; font-size: 13px; color: var(--muted); }
+    .meta b { color: var(--text); }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>KTexturePacker</h1>
+    <span>图集打包 · 基于 ASP.NET Core + MaxRects</span>
+  </header>
+
+  <div class="wrap">
+    <div class="panel">
+      <h2>图片</h2>
+      <div id="drop" class="drop">
+        点击选择，或把图片拖到这里<br />
+        <small>（支持多选 / 文件夹）</small>
+      </div>
+      <input id="fileInput" type="file" accept="image/*" multiple hidden />
+
+      <div id="files" class="files"></div>
+
+      <h2 style="margin-top:18px">参数</h2>
+      <div class="field">
+        <label>最大边长 (px)</label>
+        <input id="maxSize" type="number" value="2048" min="64" step="64" />
+      </div>
+      <div class="field">
+        <label>留白 (px)</label>
+        <input id="padding" type="number" value="1" min="0" step="1" />
+      </div>
+      <div class="field">
+        <label>算法</label>
+        <select id="algorithm">
+          <option value="best">Best Short Side Fit</option>
+          <option value="long">Best Long Side Fit</option>
+          <option value="bottomleft">Bottom-Left</option>
+          <option value="contact">Contact Point</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>描述文件格式</label>
+        <select id="format">
+          <option value="json">JSON (TexturePacker 风格)</option>
+          <option value="libgdx">libGDX .atlas</option>
+        </select>
+      </div>
+      <div class="field row">
+        <input id="allowRotation" type="checkbox" />
+        <label style="margin:0">允许 90° 旋转（更高填充率）</label>
+      </div>
+
+      <button id="packBtn" class="btn">打包并下载</button>
+      <button id="clearBtn" class="btn secondary" style="margin-top:8px">清空</button>
+      <div id="status" class="status"></div>
+    </div>
+
+    <div>
+      <div class="panel" style="padding:14px">
+        <div class="preview" id="preview"><span class="empty">打包后在此预览图集</span></div>
+        <div class="meta" id="meta"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const fileInput = document.getElementById('fileInput');
+    const drop = document.getElementById('drop');
+    const filesEl = document.getElementById('files');
+    const packBtn = document.getElementById('packBtn');
+    const clearBtn = document.getElementById('clearBtn');
+    const statusEl = document.getElementById('status');
+    const preview = document.getElementById('preview');
+    const meta = document.getElementById('meta');
+
+    let files = [];
+
+    function renderFiles() {
+      filesEl.innerHTML = '';
+      files.forEach((f, i) => {
+        const row = document.createElement('div');
+        row.className = 'file';
+        const name = document.createElement('span');
+        name.textContent = f.name;
+        const del = document.createElement('button');
+        del.textContent = '✕';
+        del.onclick = () => { files.splice(i, 1); renderFiles(); };
+        row.appendChild(name); row.appendChild(del);
+        filesEl.appendChild(row);
+      });
+      packBtn.disabled = files.length === 0;
+    }
+
+    function addFiles(list) {
+      for (const f of list) {
+        if (f.type.startsWith('image/') || /\.(png|jpe?g|gif|bmp|webp|tga)$/i.test(f.name))
+          files.push(f);
+      }
+      renderFiles();
+    }
+
+    drop.onclick = () => fileInput.click();
+    fileInput.onchange = () => { addFiles(fileInput.files); fileInput.value = ''; };
+
+    ['dragenter', 'dragover'].forEach(ev =>
+      drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); }));
+    ['dragleave', 'drop'].forEach(ev =>
+      drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over'); }));
+    drop.addEventListener('drop', e => { addFiles(e.dataTransfer.files); });
+
+    clearBtn.onclick = () => { files = []; renderFiles(); preview.innerHTML = '<span class="empty">打包后在此预览图集</span>'; meta.textContent = ''; status('', ''); };
+
+    function status(msg, cls) {
+      statusEl.textContent = msg;
+      statusEl.className = 'status' + (cls ? ' ' + cls : '');
+    }
+
+    packBtn.onclick = async () => {
+      if (files.length === 0) return;
+      packBtn.disabled = true;
+      status('打包中…', '');
+
+      const fd = new FormData();
+      files.forEach(f => fd.append('files', f, f.name));
+      fd.append('maxSize', document.getElementById('maxSize').value);
+      fd.append('padding', document.getElementById('padding').value);
+      fd.append('algorithm', document.getElementById('algorithm').value);
+      fd.append('format', document.getElementById('format').value);
+      fd.append('allowRotation', document.getElementById('allowRotation').checked);
+
+      try {
+        const res = await fetch('/api/pack', { method: 'POST', body: fd });
+        if (!res.ok) {
+          const txt = await res.text();
+          status('失败: ' + (txt || res.status), 'err');
+          return;
+        }
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = 'atlas.zip'; a.click();
+        URL.revokeObjectURL(url);
+
+        // 预览图集：从 zip 里取 atlas.png
+        const pngUrl = await extractPngFromZip(blob);
+        if (pngUrl) {
+          preview.innerHTML = '';
+          const img = document.createElement('img');
+          img.src = pngUrl;
+          preview.appendChild(img);
+          meta.innerHTML = '<b>' + files.length + '</b> 张精灵已打包 · 下载的 zip 含 <b>atlas.png</b> + 描述文件';
+        }
+        status('完成，已下载 atlas.zip', 'ok');
+      } catch (e) {
+        status('错误: ' + e.message, 'err');
+      } finally {
+        packBtn.disabled = false;
+      }
+    };
+
+    async function extractPngFromZip(blob) {
+      try {
+        const buf = await blob.arrayBuffer();
+        const zip = await (window.JSZip ? Promise.resolve() : loadJsZip()).then(() => window.JSZip.loadAsync(buf));
+        const png = zip.file('atlas.png');
+        if (!png) return null;
+        const data = await png.async('blob');
+        return URL.createObjectURL(data);
+      } catch { return null; }
+    }
+
+    function loadJsZip() {
+      return new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = 'https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js';
+        s.onload = () => resolve();
+        s.onerror = reject;
+        document.head.appendChild(s);
+      });
+    }
+
+    renderFiles();
+  </script>
+</body>
+</html>
