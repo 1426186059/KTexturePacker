@@ -80,6 +80,6 @@ public static class AtlasExporter
             pagesArr.Add((JsonNode)pageObj);
         }
         var root = new JsonObject { ["pages"] = pagesArr };
-        return root.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
+        return root.ToJsonString(new JsonSerializerOptions { WriteIndented = false });
     }
 }

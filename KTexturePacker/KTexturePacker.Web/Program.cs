@@ -316,7 +316,7 @@ static JsonObject RenderPreviewPages(IReadOnlyList<MemoryStream> pngs, int previ
     return new JsonObject { ["pages"] = arr, ["count"] = arr.Count };
 }
 
-// 写入服务器磁盘：{atlasName}_0.png … + 单个 {atlasName}.atlas.json（含所有 page）
+// 写入服务器磁盘：{atlasName}_0.png … + 单个 {atlasName}AtlasConst.Atlas_Extention（含所有 page）
 static string WriteAtlasToDisk(List<PackingResult> pages, List<MemoryStream> pngs, string outputFolder, string atlasName)
 {
     if (!Directory.Exists(outputFolder)) Directory.CreateDirectory(outputFolder);
@@ -329,14 +329,12 @@ static string WriteAtlasToDisk(List<PackingResult> pages, List<MemoryStream> png
         using (var fs = File.OpenWrite(pngPath)) { pngs[i].Position = 0; pngs[i].CopyTo(fs); }
     }
     var desc = AtlasExporter.ToJson(pages, imageNames);
-    string descPath = Path.Combine(outputFolder, atlasName + ".atlas.json");
+    string descPath = Path.Combine(outputFolder, atlasName + AtlasConst.Atlas_Extention);
     File.WriteAllText(descPath, desc);
-    // libGDX 文本格式（兼容游戏引擎），同时保留。
-    File.WriteAllText(Path.Combine(outputFolder, atlasName + ".atlas"), AtlasExporter.ToAtlas(pages, imageNames));
     return descPath;
 }
 
-// 打包成 zip：{atlasName}_0.png … + 单个 {atlasName}.atlas.json，返回 zip 流与下载文件名
+// 打包成 zip：{atlasName}_0.png … + 单个 {atlasName}AtlasConst.Atlas_Extention，返回 zip 流与下载文件名
 static (MemoryStream zip, string fileName) ZipAtlas(List<PackingResult> pages, List<MemoryStream> pngs, string atlasName)
 {
     var imageNames = new List<string>();
@@ -354,14 +352,10 @@ static (MemoryStream zip, string fileName) ZipAtlas(List<PackingResult> pages, L
             pngs[i].Position = 0;
             pngs[i].CopyTo(zs);
         }
-        var descEntry = archive.CreateEntry(atlasName + ".atlas.json");
+        var descEntry = archive.CreateEntry(atlasName + AtlasConst.Atlas_Extention);
         using (var zs = descEntry.Open())
         using (var w = new StreamWriter(zs))
             w.Write(desc);
-        var atlasEntry = archive.CreateEntry(atlasName + ".atlas");
-        using (var zs = atlasEntry.Open())
-        using (var w = new StreamWriter(zs))
-            w.Write(libgdx);
     }
     zip.Position = 0;
     return (zip, atlasName + ".zip");
