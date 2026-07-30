@@ -1,8 +1,20 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>netstandard2.1</TargetFramework>
-    <Nullable>enable</Nullable>
+    <!-- netstandard2.0 可被 Unity（含 IL2CPP/AOT）与 MonoGame（.NET Framework / .NET / .NET Core）直接引用，兼容性最广。 -->
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <RootNamespace>KTexturePacker.Parser</RootNamespace>
+    <AssemblyName>KTexturePackerParser</AssemblyName>
+    <LangVersion>latest</LangVersion>
+    <!-- 关闭可空注解，避免旧版 Unity 编译器（C# 7.x）在引用时报错。 -->
+    <Nullable>disable</Nullable>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
   </PropertyGroup>
+
+  <!-- System.Text.Json 在 netstandard2.0 下通过 NuGet 提供，Unity（含 IL2CPP/AOT）与 MonoGame 均可直接引用。
+       这里只用 JsonDocument / Utf8JsonReader 的 DOM 读取（无反射反序列化），因此在 AOT 环境下也安全。 -->
+  <ItemGroup>
+    <PackageReference Include="System.Text.Json" Version="8.0.5" />
+  </ItemGroup>
 
 </Project>
