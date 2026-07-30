@@ -1,0 +1,10 @@
+namespace KTexturePacker.Pages.Controls
+{
+    public partial class CategoryChart
+    {
+        public CategoryChart()
+        {
+            InitializeComponent();
+        }
+    }
+}
