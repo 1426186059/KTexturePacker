@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+	 <TargetFramework>netstandard2.1</TargetFramework>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="MonoGame.Framework.Native" Version="3.8.5" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\KTexturePacker.Parser\KTexturePacker.Parser.csproj" />
+  </ItemGroup>
+</Project>
