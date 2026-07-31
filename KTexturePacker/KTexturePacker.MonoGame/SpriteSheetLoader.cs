@@ -15,21 +15,18 @@ namespace KTexturePacker.MonoGame
             this.contentManager = contentManager;
         }
         
-        public SpriteSheet Load(string imageResource)
+        public SpriteSheet Load(string jsonPath)
         {
-            string dataFile = Path.Combine(contentManager.RootDirectory, $"{imageResource}.atlas");
-            if (!File.Exists(dataFile))
-            {
-                dataFile = Path.Combine(contentManager.RootDirectory, $"{imageResource}.atlas.txt");
-            }
-
+            string dataFile = Path.Combine(contentManager.RootDirectory, jsonPath);
+            string dir = Path.GetDirectoryName(jsonPath);
             string source = File.ReadAllText(dataFile);
             AtlasData mData = AtlasParser.Parse(source);
 
             SpriteSheet spriteSheet = new SpriteSheet();
             foreach (var v in mData.Pages)
             {
-                Texture2D texture = contentManager.Load<Texture2D>($"{Path.GetFileNameWithoutExtension(v.Image)}");
+                string texturePath = Path.Combine(dir, Path.GetFileNameWithoutExtension(v.Image));
+                Texture2D texture = contentManager.Load<Texture2D>(texturePath);
                 foreach (var v2 in v.Regions)
                 {
                     bool isRotated = v2.Rotated;
@@ -45,4 +42,5 @@ namespace KTexturePacker.MonoGame
             return spriteSheet;
         }
     }
+
 }
