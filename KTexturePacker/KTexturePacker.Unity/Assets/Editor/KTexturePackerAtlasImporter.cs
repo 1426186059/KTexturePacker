@@ -96,10 +96,14 @@ namespace KTexturePacker.Unity.Editor
                 for (int i = 0; i < count; i++)
                 {
                     AtlasRegion r = page.Regions[i];
+                    float x_min = r.X;
+                    float x_max = r.X + r.W;
+                    float y_min = r.Y - r.H;
+                    float y_max = r.Y;
+
                     SpriteMetaData meta = new SpriteMetaData
                     {
-                        // 纹理坐标系原点在左上、Y 轴向下，与 KTexturePacker 一致，直接填。
-                        rect = new Rect(r.X, r.Y, r.W, r.H),
+                        rect = Rect.MinMaxRect(x_min, x_max, y_min, y_max),
                         name = r.Name,
                         alignment = (int)SpriteAlignment.Center,
                         pivot = new Vector2(0.5f, 0.5f),
