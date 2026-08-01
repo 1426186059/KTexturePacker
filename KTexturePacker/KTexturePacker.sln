@@ -7,9 +7,9 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "KTexturePacker.Core", "KTex
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "KTexturePacker.Web", "KTexturePacker.Web\KTexturePacker.Web.csproj", "{8636D630-00A1-4CBC-9EA9-6C6D7EC2076A}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "KTexturePacker.Parser", "KTexturePacker.Parser\KTexturePacker.Parser.csproj", "{D1059750-609D-86C0-F408-8D3CDF1B2F85}"
-EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "KTexturePacker.MonoGame", "KTexturePacker.MonoGame\KTexturePacker.MonoGame.csproj", "{2DE0A8E9-BC7E-CE5C-561A-ADFA9FBF4BB1}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "KTexturePacker.Parser", "KTexturePacker.Parser\KTexturePacker.Parser.csproj", "{1204764B-EE7E-F235-5029-5511BBC60135}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -45,18 +45,6 @@ Global
 		{8636D630-00A1-4CBC-9EA9-6C6D7EC2076A}.Release|x64.Build.0 = Release|Any CPU
 		{8636D630-00A1-4CBC-9EA9-6C6D7EC2076A}.Release|x86.ActiveCfg = Release|Any CPU
 		{8636D630-00A1-4CBC-9EA9-6C6D7EC2076A}.Release|x86.Build.0 = Release|Any CPU
-		{D1059750-609D-86C0-F408-8D3CDF1B2F85}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{D1059750-609D-86C0-F408-8D3CDF1B2F85}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{D1059750-609D-86C0-F408-8D3CDF1B2F85}.Debug|x64.ActiveCfg = Debug|Any CPU
-		{D1059750-609D-86C0-F408-8D3CDF1B2F85}.Debug|x64.Build.0 = Debug|Any CPU
-		{D1059750-609D-86C0-F408-8D3CDF1B2F85}.Debug|x86.ActiveCfg = Debug|Any CPU
-		{D1059750-609D-86C0-F408-8D3CDF1B2F85}.Debug|x86.Build.0 = Debug|Any CPU
-		{D1059750-609D-86C0-F408-8D3CDF1B2F85}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{D1059750-609D-86C0-F408-8D3CDF1B2F85}.Release|Any CPU.Build.0 = Release|Any CPU
-		{D1059750-609D-86C0-F408-8D3CDF1B2F85}.Release|x64.ActiveCfg = Release|Any CPU
-		{D1059750-609D-86C0-F408-8D3CDF1B2F85}.Release|x64.Build.0 = Release|Any CPU
-		{D1059750-609D-86C0-F408-8D3CDF1B2F85}.Release|x86.ActiveCfg = Release|Any CPU
-		{D1059750-609D-86C0-F408-8D3CDF1B2F85}.Release|x86.Build.0 = Release|Any CPU
 		{2DE0A8E9-BC7E-CE5C-561A-ADFA9FBF4BB1}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{2DE0A8E9-BC7E-CE5C-561A-ADFA9FBF4BB1}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{2DE0A8E9-BC7E-CE5C-561A-ADFA9FBF4BB1}.Debug|x64.ActiveCfg = Debug|Any CPU
@@ -69,6 +57,18 @@ Global
 		{2DE0A8E9-BC7E-CE5C-561A-ADFA9FBF4BB1}.Release|x64.Build.0 = Release|Any CPU
 		{2DE0A8E9-BC7E-CE5C-561A-ADFA9FBF4BB1}.Release|x86.ActiveCfg = Release|Any CPU
 		{2DE0A8E9-BC7E-CE5C-561A-ADFA9FBF4BB1}.Release|x86.Build.0 = Release|Any CPU
+		{1204764B-EE7E-F235-5029-5511BBC60135}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{1204764B-EE7E-F235-5029-5511BBC60135}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{1204764B-EE7E-F235-5029-5511BBC60135}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{1204764B-EE7E-F235-5029-5511BBC60135}.Debug|x64.Build.0 = Debug|Any CPU
+		{1204764B-EE7E-F235-5029-5511BBC60135}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{1204764B-EE7E-F235-5029-5511BBC60135}.Debug|x86.Build.0 = Debug|Any CPU
+		{1204764B-EE7E-F235-5029-5511BBC60135}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{1204764B-EE7E-F235-5029-5511BBC60135}.Release|Any CPU.Build.0 = Release|Any CPU
+		{1204764B-EE7E-F235-5029-5511BBC60135}.Release|x64.ActiveCfg = Release|Any CPU
+		{1204764B-EE7E-F235-5029-5511BBC60135}.Release|x64.Build.0 = Release|Any CPU
+		{1204764B-EE7E-F235-5029-5511BBC60135}.Release|x86.ActiveCfg = Release|Any CPU
+		{1204764B-EE7E-F235-5029-5511BBC60135}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

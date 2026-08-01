@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Text.Json;
 
 namespace KTexturePacker.Parser
 {
@@ -42,8 +41,8 @@ namespace KTexturePacker.Parser
 
     /// <summary>
     /// 解析 KTexturePacker 生成的图集 JSON（由 AtlasExporter.ToJson 产出）。
-    /// 使用 System.Text.Json 的 JsonDocument DOM 读取，无反射反序列化，
-    /// 因此可在 Unity（IL2CPP/AOT）与 MonoGame 上安全运行。
+    /// 本库为**零依赖**：不引用 System.Text.Json / Newtonsoft，使用内置的轻量 JSON 读取器
+    /// （见 JsonReader.cs），因此产出的 DLL 不含任何外部引用，可直接放入 Unity（Assets/.../*.dll）或 MonoGame 使用。
     /// </summary>
     public static class AtlasParser
     {
@@ -54,37 +53,34 @@ namespace KTexturePacker.Parser
                 throw new ArgumentException("json is null or empty", nameof(json));
 
             var data = new AtlasData();
-            using var doc = JsonDocument.Parse(json);
-            var root = doc.RootElement;
-
-            if (!root.TryGetProperty("pages", out var pagesEl) ||
-                pagesEl.ValueKind != JsonValueKind.Array)
+            var reader = new JsonReader(json);
+            if (!reader.ReadObject(out var root)) return data;
+            if (!root.TryGetValue("pages", out var pagesVal) || pagesVal.Kind != JsonValue.KindType.Array)
                 return data;
 
-            foreach (var pageEl in pagesEl.EnumerateArray())
+            foreach (var pageVal in pagesVal.Items)
             {
                 var page = new AtlasPage
                 {
-                    Image = GetString(pageEl, "image"),
-                    Width = GetInt(pageEl, "width"),
-                    Height = GetInt(pageEl, "height"),
+                    Image = pageVal.GetString("image"),
+                    Width = pageVal.GetInt("width"),
+                    Height = pageVal.GetInt("height"),
                 };
 
-                if (pageEl.TryGetProperty("regions", out var regionsEl) &&
-                    regionsEl.ValueKind == JsonValueKind.Array)
+                if (pageVal.TryGetValue("regions", out var regionsVal) && regionsVal.Kind == JsonValue.KindType.Array)
                 {
-                    foreach (var rEl in regionsEl.EnumerateArray())
+                    foreach (var rVal in regionsVal.Items)
                     {
                         page.Regions.Add(new AtlasRegion
                         {
-                            Name = GetString(rEl, "name"),
-                            X = GetInt(rEl, "x"),
-                            Y = GetInt(rEl, "y"),
-                            W = GetInt(rEl, "w"),
-                            H = GetInt(rEl, "h"),
-                            Rotated = GetBool(rEl, "rotated"),
-                            SourceW = GetInt(rEl, "sourceW"),
-                            SourceH = GetInt(rEl, "sourceH"),
+                            Name = rVal.GetString("name"),
+                            X = rVal.GetInt("x"),
+                            Y = rVal.GetInt("y"),
+                            W = rVal.GetInt("w"),
+                            H = rVal.GetInt("h"),
+                            Rotated = rVal.GetBool("rotated"),
+                            SourceW = rVal.GetInt("sourceW"),
+                            SourceH = rVal.GetInt("sourceH"),
                         });
                     }
                 }
@@ -100,16 +96,5 @@ namespace KTexturePacker.Parser
         {
             return Parse(File.ReadAllText(path));
         }
-
-        private static string GetString(JsonElement e, string name)
-            => e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String
-                ? v.GetString()
-                : null;
-
-        private static int GetInt(JsonElement e, string name)
-            => e.TryGetProperty(name, out var v) && v.TryGetInt32(out int i) ? i : 0;
-
-        private static bool GetBool(JsonElement e, string name)
-            => e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.True;
     }
 }

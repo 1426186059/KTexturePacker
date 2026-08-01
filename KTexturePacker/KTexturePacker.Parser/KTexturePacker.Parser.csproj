@@ -1,13 +1,16 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
+    <!-- netstandard2.1：Unity（2021.2+ 原生支持）与 MonoGame 均可直接引用，且 System.Numerics.Vector2 可用。 -->
     <TargetFramework>netstandard2.1</TargetFramework>
+    <RootNamespace>KTexturePacker.Parser</RootNamespace>
+    <AssemblyName>KTexturePacker.Parser</AssemblyName>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
   </PropertyGroup>
-  
-  <!-- System.Text.Json 在 netstandard2.0 下通过 NuGet 提供，Unity（含 IL2CPP/AOT）与 MonoGame 均可直接引用。
-       这里只用 JsonDocument / Utf8JsonReader 的 DOM 读取（无反射反序列化），因此在 AOT 环境下也安全。 -->
-  <ItemGroup>
-    <PackageReference Include="System.Text.Json" Version="8.0.5" />
-  </ItemGroup>
+
+  <!-- 零依赖：不引用 System.Text.Json / Newtonsoft，使用内置的轻量 JSON 读取器。
+       产出的 KTexturePacker.Parser.dll 不含任何外部程序集引用，Unity 可直接使用。 -->
 
 </Project>
