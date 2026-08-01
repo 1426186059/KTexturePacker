@@ -25,5 +25,5 @@
 
 ## 坐标与旋转约定
 
-- **坐标系**：KTexturePacker 的像素坐标系原点在纹理左上、Y 轴向下，与 Unity `TextureImporter` 的 `spriteSheet.rect` 坐标系一致，故 `rect` 直接填入 `x/y/w/h`。
+- **坐标系**：KTexturePacker 的像素坐标系原点在纹理**左上**、Y 轴**向下**（图像坐标）；而 Unity 的 `SpriteRect.rect` 以纹理**左下**为原点、Y 轴**向上**。两者 Y 轴方向相反，因此生成 Sprite 时 Y 必须翻转：`unityY = page.Height - ktpY - ktpH`。这与 codeandweb 官方 TexturePacker 导入器（在 `SheetInfo` 中先把 rect 翻转再赋给 `SpriteRect`）的处理一致。
 - **旋转**：若打包时开启了「允许 90° 旋转」，子图在纹理中是**顺时针（Clockwise）90°** 存放（Skia `RotateDegrees(90)`）。Unity 的 `SpriteMetaData.rect` 不支持旋转表达，本工具按纹理中的实际占位矩形（`x/y/w/h`）直接切片，**不处理旋转朝向**——请在打包时按需关闭旋转，或自行处理纹理。

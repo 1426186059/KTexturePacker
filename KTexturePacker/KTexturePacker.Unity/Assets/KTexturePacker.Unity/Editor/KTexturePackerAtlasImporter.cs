@@ -1,5 +1,7 @@
 using System.IO;
+using System.Linq;
 using UnityEditor;
+using UnityEditor.U2D.Sprites;
 using UnityEngine;
 
 using KTexturePacker.Parser;
@@ -62,6 +64,7 @@ namespace KTexturePacker.Unity.Editor
             }
 
             int totalSprites = 0;
+            bool hasError = false;
 
             foreach (AtlasPage page in data.Pages)
             {
@@ -73,6 +76,7 @@ namespace KTexturePacker.Unity.Editor
                 if (!File.Exists(pngPath))
                 {
                     Debug.LogError($"[KTexturePacker] 找不到图集页纹理: {pngPath}（atlas 中声明 image=\"{page.Image}\"）");
+                    hasError = true;
                     continue;
                 }
 
@@ -80,6 +84,7 @@ namespace KTexturePacker.Unity.Editor
                 if (importer == null)
                 {
                     Debug.LogError($"[KTexturePacker] 无法获取 TextureImporter: {pngPath}");
+                    hasError = true;
                     continue;
                 }
 
@@ -90,74 +95,109 @@ namespace KTexturePacker.Unity.Editor
                 importer.filterMode = FilterMode.Point; // 像素艺术默认最近邻，可按需改
                 importer.alphaIsTransparency = true;
 
+                // 先应用基础导入设置（textureType / spriteImportMode 等），
+                // 这样 importer 才能提供 ISpriteEditorDataProvider。
+                AssetDatabase.ImportAsset(pngPath, ImportAssetOptions.ForceUpdate);
+
+                // 重新取回 importer（应用后实例可能已刷新）。
+                importer = (TextureImporter)AssetImporter.GetAtPath(pngPath);
+                if (importer == null)
+                {
+                    Debug.LogError($"[KTexturePacker] 应用后无法重新获取 TextureImporter: {pngPath}");
+                    hasError = true;
+                    continue;
+                }
+
+                // Unity 官方写法（2021.2+）：用 SpriteDataProviderFactories 获取 ISpriteEditorDataProvider。
+                var factory = new SpriteDataProviderFactories();
+                factory.Init();
+                ISpriteEditorDataProvider provider = factory.GetSpriteEditorDataProviderFromObject(importer);
+                if (provider == null)
+                {
+                    Debug.LogError($"[KTexturePacker] 无法获取 ISpriteEditorDataProvider: {pngPath}");
+                    hasError = true;
+                    continue;
+                }
+                provider.InitSpriteEditorDataProvider();
+
                 int count = (page.Regions != null) ? page.Regions.Count : 0;
-                SpriteMetaData[] metas = new SpriteMetaData[count];
+                SpriteRect[] spriteRects = new SpriteRect[count];
 
                 for (int i = 0; i < count; i++)
                 {
                     AtlasRegion r = page.Regions[i];
-                    float x_min = r.X;
-                    float x_max = r.X + r.W;
-                    float y_min = r.Y - r.H;
-                    float y_max = r.Y;
-
-                    SpriteMetaData meta = new SpriteMetaData
+                    // 坐标系转换：KTexturePacker 的像素坐标系原点在纹理左上、Y 轴向下（图像坐标）；
+                    // 而 Unity 的 Sprite 切片以纹理左下为原点、Y 轴向上。因此 Y 必须翻转：
+                    //   unityY = page.Height - ktpY - ktpH
+                    // （与 codeandweb 官方导入器把 rect 翻转后再赋给 SpriteRect 的做法一致。）
+                    float rectY = page.Height - r.Y - r.H;
+                    SpriteRect sr = new SpriteRect
                     {
-                        rect = Rect.MinMaxRect(x_min, x_max, y_min, y_max),
                         name = r.Name,
-                        alignment = (int)SpriteAlignment.Center,
+                        rect = new Rect(r.X, rectY, r.W, r.H),
                         pivot = new Vector2(0.5f, 0.5f),
+                        alignment = (int)SpriteAlignment.Center,
                         border = Vector4.zero,
+                        spriteID = GUID.Generate(),
                     };
-                    metas[i] = meta;
+                    spriteRects[i] = sr;
                 }
 
-                // 设置 Sprite 切片。优先用 spritesheet（从早期 Unity 一直稳定的 API），
-                // 若当前程序集解析不到该属性，再用 SerializedObject 兜底，避免 NullReferenceException。
-                bool applied = false;
-                try
+                // Unity 2021.2+ 需同步维护 Sprite 名称 -> FileID 映射，避免引用丢失。
+                // 参考 codeandweb.com 官方 TexturePacker Importer：复用同名旧 GUID，保证引用稳定。
+                var nameFileId = provider.GetDataProvider<ISpriteNameFileIdDataProvider>();
+                SpriteNameFileIdPair[] ids = new SpriteNameFileIdPair[count];
+                for (int i = 0; i < count; i++)
                 {
-                    importer.spritesheet = metas;
-                    applied = true;
-                }
-                catch (System.Exception ex)
-                {
-                    Debug.LogWarning($"[KTexturePacker] importer.spritesheet 不可用，回退 SerializedObject: {ex.Message}");
-                }
-
-                if (!applied)
-                {
-                    SerializedObject so = new SerializedObject(importer);
-                    SerializedProperty spritesProp = so.FindProperty("m_SpriteSheet.m_Sprites");
-                    if (spritesProp != null)
+                    GUID guid = GUID.Generate();
+                    if (nameFileId != null)
                     {
-                        spritesProp.ClearArray();
-                        for (int i = 0; i < metas.Length; i++)
+                        // 若已有同名 Sprite，则复用其旧 GUID，避免引用失效。
+                        foreach (var old in nameFileId.GetNameFileIdPairs())
                         {
-                            spritesProp.InsertArrayElementAtIndex(i);
-                            SerializedProperty elem = spritesProp.GetArrayElementAtIndex(i);
-                            SerializedProperty p;
-                            p = elem.FindPropertyRelative("name"); if (p != null) p.stringValue = metas[i].name;
-                            p = elem.FindPropertyRelative("rect"); if (p != null) p.rectValue = metas[i].rect;
-                            p = elem.FindPropertyRelative("alignment"); if (p != null) p.intValue = metas[i].alignment;
-                            p = elem.FindPropertyRelative("pivot"); if (p != null) p.vector2Value = metas[i].pivot;
-                            p = elem.FindPropertyRelative("border"); if (p != null) p.vector4Value = metas[i].border;
+                            if (old.name == spriteRects[i].name)
+                            {
+                                guid = old.GetFileGUID();
+                                break;
+                            }
                         }
-                        so.ApplyModifiedProperties();
-                        applied = true;
                     }
+                    spriteRects[i].spriteID = guid;
+                    ids[i] = new SpriteNameFileIdPair(spriteRects[i].name, guid);
                 }
 
-                if (!applied)
+                provider.SetSpriteRects(spriteRects);
+                if (nameFileId != null)
                 {
-                    Debug.LogError($"[KTexturePacker] 无法写入 Sprite 切片到: {pngPath}（两路 API 均不可用）");
-                    continue;
+                    nameFileId.SetNameFileIdPairs(ids);
                 }
 
+                provider.Apply();
+
+                // 重新导入，使 Sprite 资源真正生成。
                 AssetDatabase.ImportAsset(pngPath, ImportAssetOptions.ForceUpdate);
                 totalSprites += count;
 
                 Debug.Log($"[KTexturePacker] 已生成 {count} 个 Sprite -> {pngPath}");
+            }
+
+            // 仅当所有页都成功解析并生成 Sprite（无任何 error 级错误）时，
+            // 才删除图集 JSON（其使命已完成，Sprite 数据已写入各 PNG 的导入设置 .meta）。
+            // 一旦解析/生成过程中出现错误，保留该文件以便排查。
+            if (hasError)
+            {
+                Debug.LogWarning($"[KTexturePacker] 解析或生成过程中存在错误，保留图集文件不删除: {atlasPath}");
+            }
+            else
+            {
+                if (AssetDatabase.DeleteAsset(atlasPath))
+                {
+                    Debug.Log($"[KTexturePacker] 解析成功，已删除图集文件: {atlasPath}");
+                }
+                else
+                {
+                    Debug.LogWarning($"[KTexturePacker] 解析成功但无法删除图集文件: {atlasPath}");
+                }
             }
 
             AssetDatabase.Refresh();
