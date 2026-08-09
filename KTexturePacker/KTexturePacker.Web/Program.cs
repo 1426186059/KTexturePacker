@@ -254,66 +254,55 @@ static (List<MemoryStream> Pngs, string? Error) RenderPages(List<PackingResult> 
     return (pngs, null);
 }
 
-// 预览：把每个图集页按「预览最大边长」切分成多张预览页（分页/平铺），每页不超过 previewMax×previewMax。
-// 若某图集页本身不超过 previewMax，则整页作为 1 张预览页输出（原始尺寸，不放大）。
-// 这样「预览最大边长」即可控制预览的分页数量：值越小，预览页越多。
-// 注意：必须从已渲染的 PNG 流切分，不能从 pages 重新绘制——源 SKBitmap 在 BuildAtlas* 里已释放。
-static JsonObject RenderPreviewPages(IReadOnlyList<MemoryStream> pngs, int previewMax)
+// 预览：把每个图集页整张按比例缩放到「最长边 ≤ previewMax」输出（保持原图比例，不切分）。
+// 每页预览都附带其对应真实图集页的尺寸（realW/realH），便于前端区分「预览尺寸」与「实际图集尺寸」。
+// 注意：必须从已渲染的 PNG 流缩放，不能从 pages 重新绘制——源 SKBitmap 在 BuildAtlas* 里已释放。
+static JsonObject RenderPreviewPages(IReadOnlyList<MemoryStream> pngs, int previewMax, IReadOnlyList<PackingResult> realPages)
 {
     previewMax = Math.Clamp(previewMax, 64, 4096);
     var arr = new JsonArray();
-    foreach (var ms in pngs)
+    var realArr = new JsonArray();
+    for (int pi = 0; pi < pngs.Count; pi++)
     {
+        int realW = realPages[pi].AtlasWidth, realH = realPages[pi].AtlasHeight;
+        realArr.Add((JsonNode)new JsonObject { ["w"] = realW, ["h"] = realH });
+
+        var ms = pngs[pi];
         ms.Position = 0;
         using var bmp = SKBitmap.Decode(ms)!;
         int w = bmp.Width, h = bmp.Height;
 
-        // 整页不超上限：直接输出原尺寸单页
-        if (w <= previewMax && h <= previewMax)
+        // 整张按比例缩放到最长边 ≤ previewMax
+        int tw = w, th = h;
+        int longest = Math.Max(w, h);
+        if (longest > previewMax)
         {
-            using var img = SKImage.FromBitmap(bmp);
-            using var data = img.Encode(SKEncodedImageFormat.Png, 100);
-            arr.Add((JsonNode)new JsonObject
-            {
-                ["w"] = w,
-                ["h"] = h,
-                ["png"] = Convert.ToBase64String(data.ToArray()),
-            });
-            continue;
+            double scale = (double)previewMax / longest;
+            tw = Math.Max(1, (int)Math.Round(w * scale));
+            th = Math.Max(1, (int)Math.Round(h * scale));
         }
-
-        // 切分为 previewMax×previewMax 的网格，每格作为一页预览
-        int cols = (int)Math.Ceiling((double)w / previewMax);
-        int rows = (int)Math.Ceiling((double)h / previewMax);
-        for (int r = 0; r < rows; r++)
+        using var scaled = new SKBitmap(tw, th);
+        using (var canvas = new SKCanvas(scaled))
         {
-            for (int c = 0; c < cols; c++)
-            {
-                int sx = c * previewMax;
-                int sy = r * previewMax;
-                int sw = Math.Min(previewMax, w - sx);
-                int sh = Math.Min(previewMax, h - sy);
-                using var tile = new SKBitmap(sw, sh);
-                using (var canvas = new SKCanvas(tile))
-                {
-                    canvas.Clear(SKColors.Transparent);
-                    canvas.DrawBitmap(bmp,
-                        new SKRect(sx, sy, sx + sw, sy + sh),
-                        new SKRect(0, 0, sw, sh),
-                        new SKSamplingOptions(SKFilterMode.Linear));
-                }
-                using var img = SKImage.FromBitmap(tile);
-                using var data = img.Encode(SKEncodedImageFormat.Png, 100);
-                arr.Add((JsonNode)new JsonObject
-                {
-                    ["w"] = sw,
-                    ["h"] = sh,
-                    ["png"] = Convert.ToBase64String(data.ToArray()),
-                });
-            }
+            canvas.Clear(SKColors.Transparent);
+            canvas.DrawBitmap(bmp,
+                new SKRect(0, 0, w, h),
+                new SKRect(0, 0, tw, th),
+                new SKSamplingOptions(SKFilterMode.Linear));
         }
+        using var img = SKImage.FromBitmap(scaled);
+        using var data = img.Encode(SKEncodedImageFormat.Png, 100);
+        arr.Add((JsonNode)new JsonObject
+        {
+            ["w"] = tw,
+            ["h"] = th,
+            ["realW"] = realW,
+            ["realH"] = realH,
+            ["page"] = pi + 1,
+            ["png"] = Convert.ToBase64String(data.ToArray()),
+        });
     }
-    return new JsonObject { ["pages"] = arr, ["count"] = arr.Count };
+    return new JsonObject { ["pages"] = arr, ["count"] = arr.Count, ["realPages"] = realArr };
 }
 
 // 写入服务器磁盘：{atlasName}_0.png … + 单个 {atlasName}AtlasConst.Atlas_Extention（含所有 page）
@@ -386,13 +375,13 @@ app.MapPost("/api/preview", async (HttpContext ctx) =>
         return Results.Text("请先上传图片文件。", "text/plain; charset=utf-8", statusCode: 400);
 
     var settings = ParseSettings(form["maxSize"], form["padding"], form["algorithm"], form["allowRotation"] == "true" || form["allowRotation"] == "1");
-    int previewMax = int.TryParse(form["previewMax"], out var pm) && pm > 0 ? pm : 512;
+    const int previewMax = 512; // 预览最大边长固定写死，不再由前端传参
     var (pngs, pages, error) = BuildAtlasFromFiles(form.Files, settings);
     if (error is not null)
         return Results.Text(error, "text/plain; charset=utf-8", statusCode: 400);
 
     SetMetaHeaders(ctx, pages);
-    var json = RenderPreviewPages(pngs, previewMax);
+    var json = RenderPreviewPages(pngs, previewMax, pages);
     foreach (var p in pngs) p.Dispose();
     return Results.Text(json.ToJsonString(), "application/json; charset=utf-8");
 });
@@ -427,8 +416,8 @@ app.MapPost("/api/pack", async (HttpContext ctx) =>
 
 // ---------- 本地模式：文件夹路径 ----------
 
-// 本地模式：输入/输出文件夹路径 -> 返回分页缩略图 JSON（按 previewMax 切分为多页预览，GET 便于前端直接 fetch）
-app.MapGet("/api/preview-local", (HttpContext ctx, string? inputFolder, string? outputFolder, int? maxSize, int? padding, string? algorithm, bool? allowRotation, int? previewMax) =>
+// 本地模式：输入/输出文件夹路径 -> 返回分页缩略图 JSON（按固定预览最大边长切分为多页预览，GET 便于前端直接 fetch）
+app.MapGet("/api/preview-local", (HttpContext ctx, string? inputFolder, string? outputFolder, int? maxSize, int? padding, string? algorithm, bool? allowRotation) =>
 {
     var settings = new PackerSettings
     {
@@ -444,8 +433,8 @@ app.MapGet("/api/preview-local", (HttpContext ctx, string? inputFolder, string? 
 
     SetMetaHeaders(ctx, pages);
     ctx.Response.Headers["X-Atlas-Name"] = ResolveAtlasName(ctx.Request.Query["atlasName"], outputFolder, inputFolder);
-    int pv = previewMax is > 0 ? previewMax.Value : 512;
-    var json = RenderPreviewPages(pngs, pv);
+    const int previewMax = 512; // 预览最大边长固定写死，不再由前端传参
+    var json = RenderPreviewPages(pngs, previewMax, pages);
     foreach (var p in pngs) p.Dispose();
     return Results.Text(json.ToJsonString(), "application/json; charset=utf-8");
 });
