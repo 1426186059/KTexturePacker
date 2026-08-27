@@ -1,21 +1,18 @@
-using System.IO.Compression;
 using System.Text.Json.Nodes;
 using KTexturePacker.Core;
-using Microsoft.AspNetCore.Http.Features;
 using SkiaSharp;
+
+// ============================================================================
+//  KTexturePacker.Web —— 仅本地运行模式（LOCAL-ONLY）
+//  本服务只接受「磁盘文件夹路径」输入，直接在服务器本机读图、打包、写盘。
+//  不支持任何远程文件上传（无 multipart / 无 zip 下载端点）。
+//  必须在运行服务的同一台机器上打开浏览器使用（localhost）。
+// ============================================================================
 
 var builder = WebApplication.CreateBuilder(args);
 var app = builder.Build();
 
-// 上传可能很大，禁用请求体大小限制
-app.Use(async (context, next) =>
-{
-    var maxReq = context.Features.Get<IHttpMaxRequestBodySizeFeature>();
-    if (maxReq is not null) maxReq.MaxRequestBodySize = null;
-    await next();
-});
-
-// 所有 /api 响应禁止缓存：避免浏览器缓存预览/打包结果导致「再次点击无效」或参数修改不生效。
+// 所有 /api 响应禁止缓存：避免浏览器缓存预览/打包结果导致「再次点击无效」或参数修改不失效。
 app.Use(async (ctx, next) =>
 {
     if (ctx.Request.Path.StartsWithSegments("/api"))
@@ -42,37 +39,6 @@ static MaxRectsMethod ParseAlgorithm(string? s) => s switch
     "contact" => MaxRectsMethod.ContactPointRule,
     _ => MaxRectsMethod.BestShortSideFit,
 };
-
-static PackerSettings ParseSettings(string? maxSize, string? padding, string? algorithm, bool? allowRotation)
-{
-    return new PackerSettings
-    {
-        MaxSize = int.TryParse(maxSize, out var m) && m > 0 ? m : 2048,
-        Padding = int.TryParse(padding, out var p) && p >= 0 ? p : 1,
-        AllowRotation = allowRotation ?? false,
-        Algorithm = ParseAlgorithm(algorithm),
-    };
-}
-
-// 自动判定模式：服务器是否和浏览器同机。
-// 本地模式本质是「服务器按磁盘路径读盘」，只有服务器在本机（localhost / 回环连接）时才有意义。
-static bool IsLocalRequest(HttpContext ctx)
-{
-    var host = ctx.Request.Host.Host;
-    if (host == "localhost" || host == "127.0.0.1" || host == "::1" || host == "[::1]")
-        return true;
-    var remote = ctx.Connection.RemoteIpAddress;
-    if (remote is not null && (System.Net.IPAddress.IsLoopback(remote)))
-        return true;
-    return false;
-}
-
-// 返回 { local: true/false }，前端据此自动选择默认模式并决定是否禁用本地模式。
-app.MapGet("/api/mode", (HttpContext ctx) =>
-{
-    var json = new JsonObject { ["local"] = IsLocalRequest(ctx) };
-    return Results.Text(json.ToJsonString(), "application/json; charset=utf-8");
-});
 
 // 服务器端目录浏览：供本地模式的「浏览…」选择器逐级列出服务器（或本机）目录。
 // 返回 JsonObject{current,parent,dirs[]}，全程用 JsonNode，原生 AOT 安全。
@@ -166,39 +132,6 @@ static string ResolveAtlasName(string? given, string? outputFolder, string? inpu
         }
     }
     return string.IsNullOrEmpty(name) ? "atlas" : name;
-}
-
-static (List<MemoryStream> Pngs, List<PackingResult> Pages, string? Error) BuildAtlasFromFiles(
-    IEnumerable<IFormFile> files, PackerSettings settings)
-{
-    var inputs = new List<SpriteInput>();
-    var names = new List<string>();
-    foreach (var f in files)
-    {
-        if (!IsImageFile(f.FileName)) continue;
-        string baseName = Path.GetFileNameWithoutExtension(f.FileName);
-        string name = baseName;
-        int k = 1;
-        while (names.Contains(name)) { name = baseName + "_" + (k++); }
-        names.Add(name);
-        using var ms = new MemoryStream();
-        f.CopyTo(ms);
-        ms.Position = 0;
-        var bmp = SKBitmap.Decode(ms);
-        if (bmp is null) continue;
-        inputs.Add(new SpriteInput(name, bmp));
-    }
-
-    if (inputs.Count == 0)
-    {
-        var fileList = string.Join(", ", System.Linq.Enumerable.Select(files, f => f.FileName + " (" + f.Length + "B)"));
-        return (null!, null!, "没有可解码的图片。收到 " + System.Linq.Enumerable.Count(files) + " 个文件：[" + fileList + "]。仅支持 png/jpg/gif/bmp/webp/tga，且文件需为合法图片。");
-    }
-
-    var pages = AtlasPacker.PackPages(inputs, settings);
-    var (pngs, error) = RenderPages(pages);
-    foreach (var s in inputs) s.Bitmap.Dispose();
-    return (pngs, pages, error);
 }
 
 static (List<MemoryStream> Pngs, List<PackingResult> Pages, string? Error) BuildAtlasFromFolder(
@@ -305,8 +238,8 @@ static JsonObject RenderPreviewPages(IReadOnlyList<MemoryStream> pngs, int previ
     return new JsonObject { ["pages"] = arr, ["count"] = arr.Count, ["realPages"] = realArr };
 }
 
-// 写入服务器磁盘：{atlasName}_0.png … + 单个 {atlasName}AtlasConst.Atlas_Extention（含所有 page）
-static string WriteAtlasToDisk(List<PackingResult> pages, List<MemoryStream> pngs, string outputFolder, string atlasName)
+// 写入服务器磁盘：{atlasName}_0.png … + 单个描述 JSON（后缀由 AtlasConst.JsonExtension(format) 决定，PixiJS=.pixi.json，其余=.atlas.txt）
+static string WriteAtlasToDisk(List<PackingResult> pages, List<MemoryStream> pngs, string outputFolder, string atlasName, AtlasFormat format)
 {
     if (!Directory.Exists(outputFolder)) Directory.CreateDirectory(outputFolder);
     var imageNames = new List<string>();
@@ -317,38 +250,17 @@ static string WriteAtlasToDisk(List<PackingResult> pages, List<MemoryStream> png
         var pngPath = Path.Combine(outputFolder, imgName);
         using (var fs = File.OpenWrite(pngPath)) { pngs[i].Position = 0; pngs[i].CopyTo(fs); }
     }
-    var desc = AtlasExporter.ToJson(pages, imageNames);
-    string descPath = Path.Combine(outputFolder, atlasName + AtlasConst.Atlas_Extention);
+    var desc = AtlasExporter.ToJson(pages, imageNames, format);
+    string descPath = Path.Combine(outputFolder, atlasName + AtlasConst.JsonExtension(format));
     File.WriteAllText(descPath, desc);
     return descPath;
 }
 
-// 打包成 zip：{atlasName}_0.png … + 单个 {atlasName}AtlasConst.Atlas_Extention，返回 zip 流与下载文件名
-static (MemoryStream zip, string fileName) ZipAtlas(List<PackingResult> pages, List<MemoryStream> pngs, string atlasName)
+static AtlasFormat ParseFormat(string? s) => (s ?? "") switch
 {
-    var imageNames = new List<string>();
-    for (int i = 0; i < pages.Count; i++) imageNames.Add(atlasName + "_" + i + ".png");
-    var desc = AtlasExporter.ToJson(pages, imageNames);
-    var libgdx = AtlasExporter.ToAtlas(pages, imageNames);
-
-    var zip = new MemoryStream();
-    using (var archive = new ZipArchive(zip, ZipArchiveMode.Create, true))
-    {
-        for (int i = 0; i < pages.Count; i++)
-        {
-            var entry = archive.CreateEntry(imageNames[i]);
-            using var zs = entry.Open();
-            pngs[i].Position = 0;
-            pngs[i].CopyTo(zs);
-        }
-        var descEntry = archive.CreateEntry(atlasName + AtlasConst.Atlas_Extention);
-        using (var zs = descEntry.Open())
-        using (var w = new StreamWriter(zs))
-            w.Write(desc);
-    }
-    zip.Position = 0;
-    return (zip, atlasName + ".zip");
-}
+    "pixijs" or "pixi" => AtlasFormat.PixiJS,
+    _ => AtlasFormat.Generic,
+};
 
 void SetMetaHeaders(HttpContext ctx, IReadOnlyList<PackingResult> pages)
 {
@@ -362,62 +274,10 @@ void SetMetaHeaders(HttpContext ctx, IReadOnlyList<PackingResult> pages)
     ctx.Response.Headers["X-Page-Count"] = pages.Count.ToString();
 }
 
-// ---------- 远端模式：上传 ----------
-
-// 上传 -> 返回分页缩略图 JSON（按 previewMax 切分为多页预览）
-app.MapPost("/api/preview", async (HttpContext ctx) =>
-{
-    IFormCollection form;
-    try { form = await ctx.Request.ReadFormAsync(); }
-    catch (Exception ex) { return Results.Text("读取表单失败: " + ex.Message, "text/plain; charset=utf-8", statusCode: 400); }
-
-    if (form.Files.Count == 0)
-        return Results.Text("请先上传图片文件。", "text/plain; charset=utf-8", statusCode: 400);
-
-    var settings = ParseSettings(form["maxSize"], form["padding"], form["algorithm"], form["allowRotation"] == "true" || form["allowRotation"] == "1");
-    const int previewMax = 512; // 预览最大边长固定写死，不再由前端传参
-    var (pngs, pages, error) = BuildAtlasFromFiles(form.Files, settings);
-    if (error is not null)
-        return Results.Text(error, "text/plain; charset=utf-8", statusCode: 400);
-
-    SetMetaHeaders(ctx, pages);
-    var json = RenderPreviewPages(pngs, previewMax, pages);
-    foreach (var p in pngs) p.Dispose();
-    return Results.Text(json.ToJsonString(), "application/json; charset=utf-8");
-});
-
-// 上传 -> 打包成 zip 下载
-app.MapPost("/api/pack", async (HttpContext ctx) =>
-{
-    IFormCollection form;
-    try { form = await ctx.Request.ReadFormAsync(); }
-    catch (Exception ex) { return Results.Text("读取表单失败: " + ex.Message, "text/plain; charset=utf-8", statusCode: 400); }
-
-    if (form.Files.Count == 0)
-        return Results.Text("请先上传图片文件。", "text/plain; charset=utf-8", statusCode: 400);
-
-    var settings = ParseSettings(form["maxSize"], form["padding"], form["algorithm"], form["allowRotation"] == "true" || form["allowRotation"] == "1");
-    var (pngs, pages, error) = BuildAtlasFromFiles(form.Files, settings);
-    if (error is not null)
-        return Results.Text(error, "text/plain; charset=utf-8", statusCode: 400);
-
-    var unplaced = pages.Sum(p => p.Unplaced.Count);
-    if (unplaced > 0)
-    {
-        foreach (var p in pngs) p.Dispose();
-        return Results.Text($"有 {unplaced} 张图片无法放入（可能单张超过最大边长），请调大 maxSize 或拆分。", "text/plain; charset=utf-8", statusCode: 400);
-    }
-
-    var atlasName = ResolveAtlasName(form["atlasName"], null, null);
-    var (zip, fileName) = ZipAtlas(pages, pngs, atlasName);
-    foreach (var p in pngs) p.Dispose();
-    return Results.File(zip, "application/zip", fileName);
-});
-
 // ---------- 本地模式：文件夹路径 ----------
 
 // 本地模式：输入/输出文件夹路径 -> 返回分页缩略图 JSON（按固定预览最大边长切分为多页预览，GET 便于前端直接 fetch）
-app.MapGet("/api/preview-local", (HttpContext ctx, string? inputFolder, string? outputFolder, int? maxSize, int? padding, string? algorithm, bool? allowRotation) =>
+app.MapGet("/api/preview", (HttpContext ctx, string? inputFolder, string? outputFolder, int? maxSize, int? padding, string? algorithm, bool? allowRotation) =>
 {
     var settings = new PackerSettings
     {
@@ -440,7 +300,7 @@ app.MapGet("/api/preview-local", (HttpContext ctx, string? inputFolder, string? 
 });
 
 // 本地模式：输入/输出文件夹路径 -> 写入服务器磁盘（GET，参数走 query）
-app.MapGet("/api/pack-local", (HttpContext ctx, string? inputFolder, string? outputFolder, int? maxSize, int? padding, string? algorithm, bool? allowRotation) =>
+app.MapGet("/api/pack", (HttpContext ctx, string? inputFolder, string? outputFolder, int? maxSize, int? padding, string? algorithm, bool? allowRotation, string? format) =>
 {
     var settings = new PackerSettings
     {
@@ -449,6 +309,7 @@ app.MapGet("/api/pack-local", (HttpContext ctx, string? inputFolder, string? out
         AllowRotation = allowRotation ?? false,
         Algorithm = ParseAlgorithm(algorithm),
     };
+    var fmt = ParseFormat(format);
 
     var (pngs, pages, error) = BuildAtlasFromFolder(inputFolder ?? "", outputFolder, settings);
     if (error is not null)
@@ -462,7 +323,7 @@ app.MapGet("/api/pack-local", (HttpContext ctx, string? inputFolder, string? out
     }
 
     var atlasName = ResolveAtlasName(ctx.Request.Query["atlasName"], outputFolder, inputFolder);
-    var atlasPath = WriteAtlasToDisk(pages, pngs, outputFolder!, atlasName);
+    var atlasPath = WriteAtlasToDisk(pages, pngs, outputFolder!, atlasName, fmt);
     foreach (var p in pngs) p.Dispose();
     return Results.Text("已生成图集：" + atlasPath + "（" + pages.Count + " 页，前缀 " + atlasName + "）", "text/plain; charset=utf-8");
 });

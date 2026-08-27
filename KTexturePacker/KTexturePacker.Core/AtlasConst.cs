@@ -2,6 +2,16 @@
 {
     public static class AtlasConst
     {
-        public const string Atlas_Extention = ".atlas.txt";
+        public static string JsonExtension(AtlasFormat format)
+        {
+            switch (format)
+            {
+                case AtlasFormat.PixiJS:
+                    return ".atlas.json";
+                default:
+                    return ".atlas.txt";
+            }
+        }
+
     }
 }
