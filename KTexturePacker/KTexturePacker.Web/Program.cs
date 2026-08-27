@@ -238,7 +238,8 @@ static JsonObject RenderPreviewPages(IReadOnlyList<MemoryStream> pngs, int previ
     return new JsonObject { ["pages"] = arr, ["count"] = arr.Count, ["realPages"] = realArr };
 }
 
-// 写入服务器磁盘：{atlasName}_0.png … + 单个描述 JSON（后缀可独立指定，空则按格式默认：PixiJS=.atlas.json，其余=.atlas.txt）
+// 写入服务器磁盘：{atlasName}_0.png … + 描述 JSON（后缀可独立指定，空则按格式默认：PixiJS=.atlas.json，其余=.atlas.txt）
+// PixiJS 多页：除主文件外，每页各写一个独立 Spritesheet JSON（文件名 = atlasName_i + suffix，与 related_multi_packs 一致）
 static string WriteAtlasToDisk(List<PackingResult> pages, List<MemoryStream> pngs, string outputFolder, string atlasName, AtlasFormat format, string suffix)
 {
     if (!Directory.Exists(outputFolder)) Directory.CreateDirectory(outputFolder);
@@ -250,10 +251,23 @@ static string WriteAtlasToDisk(List<PackingResult> pages, List<MemoryStream> png
         var pngPath = Path.Combine(outputFolder, imgName);
         using (var fs = File.OpenWrite(pngPath)) { pngs[i].Position = 0; pngs[i].CopyTo(fs); }
     }
-    var desc = AtlasExporter.ToJson(pages, imageNames, format);
-    string descPath = Path.Combine(outputFolder, atlasName + suffix);
-    File.WriteAllText(descPath, desc);
-    return descPath;
+
+    if (format == AtlasFormat.PixiJS)
+    {
+        var main = AtlasExporter.ToPixiJson(pages, imageNames, atlasName, suffix);
+        File.WriteAllText(Path.Combine(outputFolder, atlasName + suffix), main);
+        for (int i = 1; i < pages.Count; i++)
+        {
+            var pageJson = AtlasExporter.ToPixiJsonPage(pages[i], imageNames[i], AtlasExporter.BuildAnimationsForPage(pages, i));
+            File.WriteAllText(Path.Combine(outputFolder, atlasName + "_" + i + suffix), pageJson);
+        }
+    }
+    else
+    {
+        var desc = AtlasExporter.ToJson(pages, imageNames, format);
+        File.WriteAllText(Path.Combine(outputFolder, atlasName + suffix), desc);
+    }
+    return Path.Combine(outputFolder, atlasName + suffix);
 }
 
 static AtlasFormat ParseFormat(string? s) => (s ?? "") switch
