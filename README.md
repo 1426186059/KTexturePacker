@@ -8,6 +8,17 @@
 
 > **只支持本地模式（LOCAL-ONLY）**：服务与浏览器必须运行在同一台机器（`localhost`）。前端通过填写/选择服务器本机磁盘文件夹路径来打包，**不支持任何远程文件上传**。
 
+## 为什么使用 Web？—— 跨平台能力最强
+
+本项目采用 **Web 架构（ASP.NET Core 后端 + 浏览器前端）** 而非桌面客户端，核心原因就是：**Web 开发的跨平台能力在所有开发形态中最强**。
+
+- **一套代码，全平台运行**：后端 ASP.NET Core + SkiaSharp 原生支持 **Windows / Linux / macOS**；前端是标准 HTML/CSS/JS，任何现代浏览器都能打开，无需针对每个桌面系统单独开发、编译或维护客户端。
+- **零安装、即开即用**：用户不需要安装任何客户端软件，浏览器打开 `localhost` 即可使用；服务端可发布为对应平台的原生 AOT 单文件 exe，部署即复制、双击即运行。
+- **UI 迭代零成本**：界面是静态网页，改前端代码刷新即生效，无需重新发布客户端、无需走应用商店审核流程。
+- **端侧无环境依赖**：前端只依赖浏览器，不绑定任何操作系统 API 或运行时，天然屏蔽了 Windows/macOS/Linux 的系统差异。
+
+服务端可在 **Windows / macOS / Linux** 任意平台上运行（可发布为对应平台的原生 AOT 单文件 exe），前端在任意现代浏览器中打开即用。
+
 ## 核心能力
 
 ### 一、单文件夹处理
@@ -37,6 +48,25 @@
 - **逐项结果报告**：打包完成逐个子图集报告结果与输出路径。
 - **互不影响**：某个子文件夹无图片或图片放不下时单独标记失败，**不影响其他子图集的打包**。
 - **输出干净**：所有子图集平铺输出到同一个输出文件夹（`hero_0.png` / `hero.atlas.txt`、`npc_0.png` / `npc.atlas.txt`…），目录层级一目了然。
+
+## 支持的游戏引擎（导出格式）
+
+本工具只导出 **PNG 大图 + JSON 描述文件**，不绑定任何引擎 SDK；引擎侧按格式解析即可对接。配套提供 `KTexturePacker.Parser`（`KAtlasTool.GetUVRegion` / `GetUV01Region`）辅助解析，已把「坐标系翻转 + 旋转烘焙」进 UV，开箱即用。
+
+| 游戏引擎 | 推荐格式 | 说明 |
+|----------|----------|------|
+| **PixiJS v8**（Web） | PixiJS Spritesheet（`.atlas.json`） | **官方原生格式**，`Assets.load` 直接加载；多页时主文件通过 `meta.related_multi_packs` 引用各页独立 JSON；动画分组写入 `animations`。 |
+| **Unity** | 通用格式（pages/regions） | 用 `KTexturePacker.Parser` 解析，`flipY` 默认符合 Unity 纹理左下原点约定。 |
+| **MonoGame / XNA** | 通用格式（pages/regions） | 同上，`flipY` 默认符合 OpenGL 纹理约定。 |
+| **OpenGL / Vulkan / 自研引擎** | 通用格式（pages/regions） | 格式自描述（坐标 + 旋转标记 + 源尺寸），任意引擎可自行适配；Parser 提供像素空间/归一化 UV 与顺时针 90° 旋转烘焙。 |
+| **Godot / Cocos / 其他引擎** | 通用格式（pages/regions） | 按引擎坐标约定自行转换即可（旋转方向与坐标系详见下文）。 |
+
+> **通用格式结构**（单文件含全部页，可直接对接任意引擎）：
+>
+> ```json
+> { "pages": [ { "image": "atlas_0.png", "width": 512, "height": 512,
+>     "regions": [ { "name": "hero", "x": 0, "y": 0, "w": 64, "h": 64, "rotated": false, "sourceW": 64, "sourceH": 64 } ] } ] }
+> ```
 
 ## 页面结构（3 个页面）
 
