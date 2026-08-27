@@ -1,26 +1,53 @@
 <!DOCTYPE html>
-<!--  Licensed to the .NET Foundation under one or more agreements. -->
-<!-- The .NET Foundation licenses this file to you under the MIT license. -->
-<html>
+<html lang="zh-CN">
 
 <head>
-  <title>KTexturePacker.PixiJS</title>
+  <title>KTexturePacker.PixiJS · 图集动画示例</title>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="preload" id="webassembly" />
-  <script type="importmap"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: #0f1115;
+      color: #e8eaf0;
+      min-height: 100vh;
+    }
+    header {
+      padding: 16px 24px;
+      border-bottom: 1px solid #2a2f3a;
+      display: flex;
+      align-items: baseline;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    header h1 { font-size: 18px; margin: 0; }
+    header span { color: #9aa3b2; font-size: 13px; }
+    .wrap { display: flex; flex-wrap: wrap; gap: 18px; padding: 18px 24px; }
+    .card { background: #181b22; border: 1px solid #2a2f3a; border-radius: 12px; padding: 16px; }
+    .card h2 { font-size: 13px; color: #9aa3b2; margin: 0 0 12px; letter-spacing: .05em; }
+    #stage canvas { display: block; border-radius: 8px; }
+    .info { margin-top: 12px; font-size: 13px; color: #9aa3b2; line-height: 1.7; }
+    .info b { color: #e8eaf0; }
+    .info .err { color: #ff7b7b; }
+  </style>
   <script type='module' src="main#[.{fingerprint}].js"></script>
 </head>
 
 <body>
-  <h1>Stopwatch</h1>
-  <p>
-    Time elapsed in .NET is <span id="time"><i>loading...</i></span>
-  </p>
-  <p>
-    <button id="pause">Pause</button>
-    <button id="reset">Reset</button>
-  </p>
+  <header>
+    <h1>KTexturePacker · PixiJS 图集示例</h1>
+    <span>图集：MyRes/Atlas/Bonus_0.png + Bonus.atlas.txt（PixiJS Spritesheet）</span>
+  </header>
+
+  <div class="wrap">
+    <div class="card">
+      <h2>动画播放（AnimatedSprite，来自 atlas 的 animations 元数据）</h2>
+      <div id="stage"></div>
+      <div class="info" id="info">加载中…</div>
+    </div>
+  </div>
 </body>
 
 </html>

@@ -8,4 +8,8 @@
   <ItemGroup>
     <StaticWebAssetFingerprintPattern Include="JS" Pattern="*.js" Expression="#[.{fingerprint}]!" />
   </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="wwwroot\MyRes\Atlas\" />
+  </ItemGroup>
 </Project>
