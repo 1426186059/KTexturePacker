@@ -103,6 +103,16 @@
     .meta b { color: var(--text); }
     .hintline { color: var(--muted); font-size: 12px; margin-top: 8px; }
     .field.row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+    /* 导出设置（Json格式 / 后缀 / 图集名字）统一背景块 */
+    .export-block {
+      background: var(--panel-2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px 12px 2px;
+      margin-bottom: 14px;
+    }
+    .export-title { font-size: 12px; color: var(--muted); margin: 0 0 10px; letter-spacing: .05em; }
+    .export-block .field { margin-bottom: 12px; }
     .hint { display: block; width: 100%; color: var(--muted); font-size: 12px; margin-top: 2px; }
     .hint b { color: var(--text); }
   </style>
@@ -140,30 +150,50 @@
   <div class="wrap">
     <div class="panel">
       <h2>参数</h2>
-      <div class="field">
-        <label>单页图集最大边长 (px)</label>
-        <input id="maxSize" type="number" value="2048" min="64" step="64" />
+      <div class="export-block">
+        <div class="export-title">打包参数</div>
+        <div class="field">
+          <label>单页图集最大边长 (px)</label>
+          <input id="maxSize" type="number" value="2048" min="64" step="64" />
+        </div>
+        <div class="field">
+          <label>留白 (px)</label>
+          <input id="padding" type="number" value="1" min="0" step="1" />
+        </div>
+        <div class="field">
+          <label>算法</label>
+          <select id="algorithm">
+            <option value="best">Best Short Side Fit</option>
+            <option value="long">Best Long Side Fit</option>
+            <option value="bottomleft">Bottom-Left</option>
+            <option value="contact">Contact Point</option>
+          </select>
+        </div>
+        <div class="field row">
+          <input id="allowRotation" type="checkbox" />
+          <label style="margin:0">允许 90° 顺时针 旋转（更高填充率）</label>
+        </div>
       </div>
-      <div class="field">
-        <label>留白 (px)</label>
-        <input id="padding" type="number" value="1" min="0" step="1" />
-      </div>
-      <div class="field">
-        <label>算法</label>
-        <select id="algorithm">
-          <option value="best">Best Short Side Fit</option>
-          <option value="long">Best Long Side Fit</option>
-          <option value="bottomleft">Bottom-Left</option>
-          <option value="contact">Contact Point</option>
-        </select>
-      </div>
-      <div class="field row">
-        <input id="allowRotation" type="checkbox" />
-        <label style="margin:0">允许 90° 顺时针 旋转（更高填充率）</label>
-      </div>
-      <div class="field">
-        <label>图集名字</label>
-        <input id="atlasName" type="text" placeholder="留空则默认用输出文件夹名" />
+      <div class="export-block">
+        <div class="export-title">导出设置</div>
+        <div class="field">
+          <label>输出 Json文件格式</label>
+          <select id="format">
+            <option value="generic">通用格式（pages/regions）</option>
+            <option value="pixijs">PixiJS v8（Spritesheet）</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>描述文件后缀</label>
+          <select id="suffix">
+            <option value=".atlas.txt">.atlas.txt</option>
+            <option value=".atlas.json">.atlas.json</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>图集名字</label>
+          <input id="atlasName" type="text" placeholder="留空则默认用输出文件夹名" />
+        </div>
       </div>
       <button id="packBtn" class="btn">打包</button>
       <button id="previewBtn" class="btn secondary" style="margin-top:8px">预览图集</button>
@@ -225,6 +255,18 @@
     function algoLabel() {
       return ({ best: 'Best Short Side Fit', long: 'Best Long Side Fit', bottomleft: 'Bottom-Left', contact: 'Contact Point' })[document.getElementById('algorithm').value] || '';
     }
+    function formatLabel() {
+      return ({ generic: '通用格式（pages/regions）', pixijs: 'PixiJS v8（Spritesheet）' })[document.getElementById('format').value] || '';
+    }
+
+    // 格式 ↔ 后缀 联动：切换格式时，若用户未手动改过后缀，则自动跟随该格式的默认后缀
+    const formatDefaultSuffix = { generic: '.atlas.txt', pixijs: '.atlas.json' };
+    let suffixTouched = false;
+    document.getElementById('suffix').addEventListener('change', () => { suffixTouched = true; });
+    document.getElementById('format').addEventListener('change', () => {
+      if (!suffixTouched) document.getElementById('suffix').value = formatDefaultSuffix[document.getElementById('format').value] || '.atlas.txt';
+      if (document.getElementById('inputFolder').value.trim()) doPreview();
+    });
 
     async function showPreview(res) {
       const j = await res.json();
@@ -402,6 +444,9 @@
       document.getElementById('maxSize').value = 2048;
       document.getElementById('padding').value = 1;
       document.getElementById('algorithm').value = 'best';
+      document.getElementById('format').value = 'generic';
+      document.getElementById('suffix').value = '.atlas.txt';
+      suffixTouched = false;
       document.getElementById('allowRotation').checked = false;
       document.getElementById('atlasName').value = '';
       lastSourcePath = '';
@@ -452,11 +497,12 @@
         const p = new URLSearchParams({ inputFolder: inp, outputFolder: out, maxSize: document.getElementById('maxSize').value,
           padding: document.getElementById('padding').value, algorithm: document.getElementById('algorithm').value,
           allowRotation: document.getElementById('allowRotation').checked,
-          atlasName: document.getElementById('atlasName').value.trim() });
+          atlasName: document.getElementById('atlasName').value.trim(),
+          format: document.getElementById('format').value, suffix: document.getElementById('suffix').value });
         const res = await fetch('/api/pack?' + p.toString());
         const txt = await res.text();
         if (!res.ok) status('失败: ' + txt, 'err');
-        else { status('完成，已写入磁盘。\n' + txt, 'ok'); doPreview(true); }
+        else { status('完成，已写入磁盘。\n' + txt + '\n格式：' + formatLabel() + '，后缀：' + document.getElementById('suffix').value, 'ok'); doPreview(true); }
       } catch (e) { status('错误: ' + e.message, 'err'); }
       finally { packBtn.disabled = false; }
     };

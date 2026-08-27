@@ -238,8 +238,8 @@ static JsonObject RenderPreviewPages(IReadOnlyList<MemoryStream> pngs, int previ
     return new JsonObject { ["pages"] = arr, ["count"] = arr.Count, ["realPages"] = realArr };
 }
 
-// 写入服务器磁盘：{atlasName}_0.png … + 单个描述 JSON（后缀由 AtlasConst.JsonExtension(format) 决定，PixiJS=.pixi.json，其余=.atlas.txt）
-static string WriteAtlasToDisk(List<PackingResult> pages, List<MemoryStream> pngs, string outputFolder, string atlasName, AtlasFormat format)
+// 写入服务器磁盘：{atlasName}_0.png … + 单个描述 JSON（后缀可独立指定，空则按格式默认：PixiJS=.atlas.json，其余=.atlas.txt）
+static string WriteAtlasToDisk(List<PackingResult> pages, List<MemoryStream> pngs, string outputFolder, string atlasName, AtlasFormat format, string suffix)
 {
     if (!Directory.Exists(outputFolder)) Directory.CreateDirectory(outputFolder);
     var imageNames = new List<string>();
@@ -251,7 +251,7 @@ static string WriteAtlasToDisk(List<PackingResult> pages, List<MemoryStream> png
         using (var fs = File.OpenWrite(pngPath)) { pngs[i].Position = 0; pngs[i].CopyTo(fs); }
     }
     var desc = AtlasExporter.ToJson(pages, imageNames, format);
-    string descPath = Path.Combine(outputFolder, atlasName + AtlasConst.JsonExtension(format));
+    string descPath = Path.Combine(outputFolder, atlasName + suffix);
     File.WriteAllText(descPath, desc);
     return descPath;
 }
@@ -260,6 +260,13 @@ static AtlasFormat ParseFormat(string? s) => (s ?? "") switch
 {
     "pixijs" or "pixi" => AtlasFormat.PixiJS,
     _ => AtlasFormat.Generic,
+};
+
+// 描述文件后缀：只接受两种（.atlas.txt / .atlas.json）；未指定或不合法则回退到该格式的默认后缀
+static string ParseSuffix(string? s, AtlasFormat format) => (s ?? "") switch
+{
+    ".atlas.txt" or ".atlas.json" => s!,
+    _ => AtlasConst.JsonExtension(format),
 };
 
 void SetMetaHeaders(HttpContext ctx, IReadOnlyList<PackingResult> pages)
@@ -300,7 +307,7 @@ app.MapGet("/api/preview", (HttpContext ctx, string? inputFolder, string? output
 });
 
 // 本地模式：输入/输出文件夹路径 -> 写入服务器磁盘（GET，参数走 query）
-app.MapGet("/api/pack", (HttpContext ctx, string? inputFolder, string? outputFolder, int? maxSize, int? padding, string? algorithm, bool? allowRotation, string? format) =>
+app.MapGet("/api/pack", (HttpContext ctx, string? inputFolder, string? outputFolder, int? maxSize, int? padding, string? algorithm, bool? allowRotation, string? format, string? suffix) =>
 {
     var settings = new PackerSettings
     {
@@ -310,6 +317,7 @@ app.MapGet("/api/pack", (HttpContext ctx, string? inputFolder, string? outputFol
         Algorithm = ParseAlgorithm(algorithm),
     };
     var fmt = ParseFormat(format);
+    var descSuffix = ParseSuffix(suffix, fmt);
 
     var (pngs, pages, error) = BuildAtlasFromFolder(inputFolder ?? "", outputFolder, settings);
     if (error is not null)
@@ -323,7 +331,7 @@ app.MapGet("/api/pack", (HttpContext ctx, string? inputFolder, string? outputFol
     }
 
     var atlasName = ResolveAtlasName(ctx.Request.Query["atlasName"], outputFolder, inputFolder);
-    var atlasPath = WriteAtlasToDisk(pages, pngs, outputFolder!, atlasName, fmt);
+    var atlasPath = WriteAtlasToDisk(pages, pngs, outputFolder!, atlasName, fmt, descSuffix);
     foreach (var p in pngs) p.Dispose();
     return Results.Text("已生成图集：" + atlasPath + "（" + pages.Count + " 页，前缀 " + atlasName + "）", "text/plain; charset=utf-8");
 });
