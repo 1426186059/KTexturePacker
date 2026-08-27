@@ -66,9 +66,10 @@ public static class AtlasPacker
         int maxSize = Math.Max(64, settings.MaxSize);
         int pad = Math.Max(0, settings.Padding);
 
+        // 从「能容纳最大单张（含 padding）」的最小 2 的幂起步，页面紧贴内容、不无谓膨胀
         int start = 64;
         if (sprites.Count > 0)
-            start = Math.Max(start, NextPowerOfTwo(sprites.Max(s => Math.Max(s.Bitmap.Width, s.Bitmap.Height))));
+            start = NextPowerOfTwo(sprites.Max(s => Math.Max(s.Bitmap.Width + pad * 2, s.Bitmap.Height + pad * 2)));
         start = Math.Min(start, maxSize);
 
         PackingResult? best = null;
@@ -127,12 +128,10 @@ public static class AtlasPacker
         while (remaining.Count > 0)
         {
             int maxSingle = remaining.Max(s => Math.Max(s.Bitmap.Width, s.Bitmap.Height)) + pad * 2;
-            // pageMax 固定为 maxSize（封顶）；start 取「能容纳最大一张」的最小 2 的幂，循环逐步翻倍找到能放下全部的最小页。
+            // pageMax 固定为 maxSize（封顶）；start 取「能容纳最大一张（含 padding）」的最小 2 的幂，循环逐步翻倍找到能放下全部的最小页。
             int pageMax = maxSize;
 
-            int start = 64;
-            start = Math.Max(start, NextPowerOfTwo(maxSingle));
-            start = Math.Min(start, pageMax);
+            int start = Math.Min(NextPowerOfTwo(maxSingle), pageMax);
 
             PackingResult? best = null;
             int size = start;
