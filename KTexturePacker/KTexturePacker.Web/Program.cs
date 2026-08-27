@@ -214,13 +214,29 @@ static JsonObject RenderPreviewPages(IReadOnlyList<MemoryStream> pngs, int previ
             tw = Math.Max(1, (int)Math.Round(w * scale));
             th = Math.Max(1, (int)Math.Round(h * scale));
         }
-        using var scaled = new SKBitmap(tw, th);
+        // 预览画布 = 页面缩放尺寸 + 四周留白；页面外画棋盘格、页面内画深色底，
+        // 两种背景色对比即可标出「图集页真实大小」边界（无需额外画边界线）
+        const int pad = 16, cell = 8;
+        int cw = tw + pad * 2, chh = th + pad * 2;
+        using var scaled = new SKBitmap(cw, chh);
         using (var canvas = new SKCanvas(scaled))
         {
-            canvas.Clear(SKColors.Transparent);
+            // 页面外：棋盘格（与前端预览背景同款深色系）
+            canvas.Clear(new SKColor(0x1b, 0x1f, 0x28));
+            using (var dark = new SKPaint { Color = new SKColor(0x12, 0x14, 0x1a) })
+            {
+                for (int y = 0; y * cell < chh; y++)
+                    for (int x = 0; x * cell < cw; x++)
+                        if (((x + y) & 1) == 0)
+                            canvas.DrawRect(new SKRect(x * cell, y * cell, (x + 1) * cell, (y + 1) * cell), dark);
+            }
+            // 页面实际区域：不透明深色底
+            using var pageBg = new SKPaint { Color = new SKColor(0x23, 0x28, 0x33) };
+            canvas.DrawRect(new SKRect(pad, pad, pad + tw, pad + th), pageBg);
+            // 页面内容
             canvas.DrawBitmap(bmp,
                 new SKRect(0, 0, w, h),
-                new SKRect(0, 0, tw, th),
+                new SKRect(pad, pad, pad + tw, pad + th),
                 new SKSamplingOptions(SKFilterMode.Linear));
         }
         using var img = SKImage.FromBitmap(scaled);
