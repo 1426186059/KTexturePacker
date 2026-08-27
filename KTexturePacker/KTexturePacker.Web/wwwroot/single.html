@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>单文件夹处理 · KTexturePacker</title>
+  <style>
+    :root {
+      --bg: #0f1115;
+      --panel: #181b22;
+      --panel-2: #20242e;
+      --accent: #5b8cff;
+      --accent-2: #3f6fe0;
+      --text: #e8eaf0;
+      --muted: #9aa3b2;
+      --border: #2a2f3a;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+    header {
+      padding: 14px 24px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      flex-wrap: wrap;
+      background: var(--panel);
+    }
+    header h1 { font-size: 18px; margin: 0; }
+    header .subtitle { color: var(--muted); font-size: 13px; }
+    /* 顶部导航菜单 */
+    nav { margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; }
+    nav a {
+      color: var(--muted); text-decoration: none; font-size: 14px;
+      padding: 7px 16px; border-radius: 8px; border: 1px solid transparent;
+      white-space: nowrap; transition: background .15s, color .15s;
+    }
+    nav a:hover { color: var(--text); background: var(--panel-2); }
+    nav a.active { color: #fff; background: var(--accent); }
+
+    /* 顶部输入区 */
+    .topbar { padding: 16px 24px; border-bottom: 1px solid var(--border); background: var(--panel); }
+    .topbar-inner { max-width: 1280px; margin: 0 auto; }
+    .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+    @media (max-width: 760px) { .field-row { grid-template-columns: 1fr; } }
+    .pathfield label { display: block; font-size: 13px; margin-bottom: 6px; color: var(--muted); }
+    .pathfield .inputwrap { display: flex; gap: 8px; }
+    .pathfield input {
+      flex: 1; width: 100%;
+      background: var(--panel-2); border: 1px solid var(--border); color: var(--text);
+      border-radius: 8px; padding: 9px 10px; font-size: 14px;
+    }
+    .pathfield input.dropover { border-color: var(--accent); background: #232a3a; }
+    .browseBtn {
+      border: 1px solid var(--border); background: var(--panel-2); color: var(--text);
+      border-radius: 8px; padding: 8px 14px; font-size: 13px; cursor: pointer; white-space: nowrap;
+    }
+    .browseBtn:hover { background: #2a3040; }
+
+    .wrap { display: grid; grid-template-columns: 380px 1fr; gap: 18px; padding: 18px 24px; align-items: start; max-width: 1280px; margin: 0 auto; }
+    @media (max-width: 760px) { .wrap { grid-template-columns: 1fr; } }
+    .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 16px; }
+    .panel h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 12px; }
+    .field { margin-bottom: 14px; }
+    .field label { display: block; font-size: 13px; margin-bottom: 6px; color: var(--muted); }
+    .field input[type=number], .field select {
+      width: 100%; background: var(--panel-2); border: 1px solid var(--border); color: var(--text);
+      border-radius: 8px; padding: 8px 10px; font-size: 14px;
+    }
+    .row { display: flex; align-items: center; gap: 8px; }
+    .row input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--accent); }
+    .btn {
+      width: 100%; border: none; border-radius: 8px; padding: 11px 14px; font-size: 14px; font-weight: 600;
+      cursor: pointer; background: var(--accent); color: #fff;
+    }
+    .btn:hover { background: var(--accent-2); }
+    .btn:disabled { background: #2a2f3a; color: var(--muted); cursor: not-allowed; }
+    .btn.secondary { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); }
+    .btn.secondary:hover { background: #2a3040; }
+    .status { margin-top: 12px; font-size: 13px; color: var(--muted); min-height: 18px; white-space: pre-wrap; word-break: break-all; }
+    .status.ok { color: #7bdc8b; }
+    .status.err { color: #ff7b7b; }
+    .preview {
+      background:
+        linear-gradient(45deg, #15171d 25%, transparent 25%) 0 0/20px 20px,
+        linear-gradient(-45deg, #15171d 25%, transparent 25%) 0 0/20px 20px,
+        linear-gradient(45deg, transparent 75%, #15171d 75%) 0 0/20px 20px,
+        linear-gradient(-45deg, transparent 75%, #15171d 75%) 0 0/20px 20px,
+        var(--panel);
+      border: 1px solid var(--border); border-radius: 12px; min-height: 360px;
+      display: flex; align-items: flex-start; justify-content: flex-start; flex-wrap: wrap;
+      gap: 14px; padding: 16px; overflow: auto;
+    }
+    .preview img { max-width: 100%; image-rendering: pixelated; }
+    .preview .empty { color: var(--muted); font-size: 14px; text-align: center; padding: 20px; }
+    .preview .page { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; background: var(--panel); display: flex; flex-direction: column; }
+    .preview .pagecap { font-size: 12px; color: var(--muted); padding: 6px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+    .preview .page img { display: block; max-width: 512px; }
+    .meta { margin-top: 12px; font-size: 13px; color: var(--muted); }
+    .meta b { color: var(--text); }
+    .hintline { color: var(--muted); font-size: 12px; margin-top: 8px; }
+    .field.row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+    /* 导出设置（Json格式 / 后缀 / 图集名字）统一背景块 */
+    .export-block {
+      background: var(--panel-2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px 12px 2px;
+      margin-bottom: 14px;
+    }
+    .export-title { font-size: 15px; font-weight: 700; color: var(--text); text-align: center; margin: 0 0 12px; }
+    .export-block .field { margin-bottom: 12px; }
+    .hint { display: block; width: 100%; color: var(--muted); font-size: 12px; margin-top: 2px; }
+    .hint b { color: var(--text); }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>KTexturePacker</h1>
+    <span class="subtitle">单文件夹处理</span>
+    <nav>
+      <a href="index.html">首页</a>
+      <a href="single.html" class="active">单文件夹处理</a>
+      <a href="multi.html">多文件夹处理</a>
+    </nav>
+  </header>
+
+  <!-- 顶部输入区：只支持本地模式（服务器/本机磁盘路径） -->
+  <div class="topbar">
+    <div class="topbar-inner">
+      <div class="field-row">
+        <div class="pathfield">
+          <label>输入文件夹</label>
+          <div class="inputwrap">
+            <input id="inputFolder" type="text" placeholder="如 D:\textures\in" />
+            <button class="browseBtn" id="browseInput" type="button">浏览…</button>
+          </div>
+        </div>
+        <div class="pathfield">
+          <label>输出文件夹</label>
+          <div class="inputwrap">
+            <input id="outputFolder" type="text" placeholder="留空则与输入文件夹相同" />
+            <button class="browseBtn" id="browseOutput" type="button">浏览…</button>
+          </div>
+        </div>
+      </div>
+      <div class="hintline">⚠ 只支持本地模式：请在运行服务的同一台机器（localhost）访问本页面，填写的是服务器本机磁盘路径。可直接把文件夹拖到输入框自动识别。</div>
+    </div>
+  </div>
+
+  <div class="wrap">
+    <div class="panel">
+      <div class="export-block">
+        <div class="export-title">打包参数</div>
+        <div class="field">
+          <label>单页图集最大边长 (px)</label>
+          <input id="maxSize" type="number" value="2048" min="64" step="64" />
+        </div>
+        <div class="field">
+          <label>留白 (px)</label>
+          <input id="padding" type="number" value="1" min="0" step="1" />
+        </div>
+        <div class="field">
+          <label>算法</label>
+          <select id="algorithm">
+            <option value="best">Best Short Side Fit</option>
+            <option value="long">Best Long Side Fit</option>
+            <option value="bottomleft">Bottom-Left</option>
+            <option value="contact">Contact Point</option>
+          </select>
+        </div>
+        <div class="field row">
+          <input id="allowRotation" type="checkbox" />
+          <label style="margin:0">允许 90° 顺时针 旋转（更高填充率）</label>
+        </div>
+      </div>
+      <div class="export-block">
+        <div class="export-title">导出设置</div>
+        <div class="field">
+          <label>输出 Json文件格式</label>
+          <select id="format">
+            <option value="generic">通用格式（pages/regions）</option>
+            <option value="pixijs">PixiJS v8（Spritesheet）</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>描述文件后缀</label>
+          <select id="suffix">
+            <option value=".atlas.txt">.atlas.txt</option>
+            <option value=".atlas.json">.atlas.json</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>图集名字</label>
+          <input id="atlasName" type="text" placeholder="留空则默认用输出文件夹名" />
+        </div>
+      </div>
+      <button id="packBtn" class="btn">打包</button>
+      <button id="previewBtn" class="btn secondary" style="margin-top:8px">预览图集</button>
+      <button id="resetBtn" class="btn secondary" style="margin-top:8px">重置</button>
+      <div id="status" class="status"></div>
+    </div>
+
+    <div>
+      <div class="panel" style="padding:14px">
+        <div class="preview" id="preview"><span class="empty">设置好输入后点击「预览图集」查看效果</span></div>
+        <div class="meta" id="meta"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 文件夹选择器 -->
+  <div id="picker" class="picker" style="display:none">
+    <div class="picker-box">
+      <div class="picker-head">
+        <span id="pickerTitle">选择文件夹</span>
+        <button type="button" id="pickerClose" class="browseBtn">关闭</button>
+      </div>
+      <div class="picker-bar">
+        <button type="button" id="pickerUp" class="browseBtn">上一级</button>
+        <span id="pickerPath" class="picker-path"></span>
+      </div>
+      <div id="pickerList" class="picker-list"></div>
+      <div class="picker-foot">
+        <button type="button" id="pickerSelect" class="btn" style="width:auto;padding:8px 18px">选择此文件夹</button>
+      </div>
+    </div>
+  </div>
+
+  <style>
+    .picker { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: flex; align-items: center; justify-content: center; z-index: 50; }
+    .picker-box { width: min(640px, 92vw); max-height: 80vh; background: var(--panel); border: 1px solid var(--border); border-radius: 12px; display: flex; flex-direction: column; }
+    .picker-head { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--border); }
+    .picker-bar { display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-bottom: 1px solid var(--border); }
+    .picker-path { color: var(--muted); font-size: 13px; word-break: break-all; }
+    .picker-list { overflow-y: auto; padding: 8px; flex: 1; min-height: 200px; }
+    .picker-item { padding: 9px 12px; border-radius: 8px; cursor: pointer; font-size: 14px; }
+    .picker-item:hover { background: var(--panel-2); }
+    .picker-foot { padding: 12px 16px; border-top: 1px solid var(--border); text-align: right; }
+  </style>
+
+  <script>
+    // ===== 本地模式（唯一模式，本服务只支持本地模式）=====
+    let lastSourcePath = '';   // 上次触发自动填充所用的源文件夹路径
+    let atlasAutoGenerated = false; // 当前 atlasName 是否由系统自动生成（未手动改）
+    let outInitialized = false;    // 输出文件夹是否已初始化过（一旦初始化，不再由代码自动修改）
+
+    const packBtn = document.getElementById('packBtn');
+    const previewBtn = document.getElementById('previewBtn');
+    const statusEl = document.getElementById('status');
+    const preview = document.getElementById('preview');
+    const meta = document.getElementById('meta');
+
+    function status(msg, cls) { statusEl.textContent = msg; statusEl.className = 'status' + (cls ? ' ' + cls : ''); }
+    function algoLabel() {
+      return ({ best: 'Best Short Side Fit', long: 'Best Long Side Fit', bottomleft: 'Bottom-Left', contact: 'Contact Point' })[document.getElementById('algorithm').value] || '';
+    }
+    function formatLabel() {
+      return ({ generic: '通用格式（pages/regions）', pixijs: 'PixiJS v8（Spritesheet）' })[document.getElementById('format').value] || '';
+    }
+
+    // 格式 ↔ 后缀 联动：切换格式时，若用户未手动改过后缀，则自动跟随该格式的默认后缀
+    const formatDefaultSuffix = { generic: '.atlas.txt', pixijs: '.atlas.json' };
+    let suffixTouched = false;
+    document.getElementById('suffix').addEventListener('change', () => { suffixTouched = true; });
+    document.getElementById('format').addEventListener('change', () => {
+      if (!suffixTouched) document.getElementById('suffix').value = formatDefaultSuffix[document.getElementById('format').value] || '.atlas.txt';
+      if (document.getElementById('inputFolder').value.trim()) doPreview();
+    });
+
+    async function showPreview(res) {
+      const j = await res.json();
+      const pages = j.pages || [];
+      const count = j.count || pages.length;
+      preview.innerHTML = '';
+      if (!pages.length) {
+        preview.innerHTML = '<span class="empty">无预览</span>';
+      } else {
+        pages.forEach((pg, i) => {
+          const wrap = document.createElement('div');
+          wrap.className = 'page';
+          const cap = document.createElement('div');
+          cap.className = 'pagecap';
+          const same = pg.w === pg.realW && pg.h === pg.realH;
+          cap.innerHTML = '第 ' + pg.page + ' 个图集页预览' +
+            '<br/>预览尺寸：<b>' + pg.w + '×' + pg.h + '</b>（整图缩放）' +
+            '<br/>实际图集尺寸：<b>' + pg.realW + '×' + pg.realH + '</b>' +
+            (same ? ' <span style="color:#8a93a6">(预览同实际)</span>' : ' <span style="color:#8a93a6">(已按比例缩放到 512px 内)</span>');
+          const img = document.createElement('img');
+          img.src = 'data:image/png;base64,' + pg.png;
+          wrap.appendChild(cap);
+          wrap.appendChild(img);
+          preview.appendChild(wrap);
+        });
+      }
+      const sc = res.headers.get('X-Sprite-Count');
+      const pagesH = parseInt(res.headers.get('X-Page-Count') || count, 10);
+      const uc = parseInt(res.headers.get('X-Unplaced-Count') || '0', 10);
+      const realPages = j.realPages || [];
+      let realTxt = realPages.length
+        ? realPages.map(p => p.w + '×' + p.h).join('，')
+        : (res.headers.get('X-Atlas-Width') + '×' + res.headers.get('X-Atlas-Height'));
+      let txt = '实际图集：<b>' + pagesH + '</b> 页，尺寸 ' + realTxt + ' · 已放置 <b>' + sc + '</b> 张';
+      if (uc > 0) txt += ' · <span style="color:#ffb86b">' + uc + ' 张放不下（调大最大边长或允许旋转）</span>';
+      txt += '<br/>预览为整图按比例缩放显示（最长边 ≤ 512px），仅控制浏览器渲染大小，不影响导出';
+      txt += '<br/>算法：' + algoLabel();
+      const an = res.headers.get('X-Atlas-Name');
+      if (an) txt += '<br/>导出前缀：<b>' + an + '</b>';
+      meta.innerHTML = txt;
+    }
+
+    // 源文件夹变化（或首次设定）时，重新初始化 atlasName 为源文件夹名；
+    // 源文件夹未变化（且用户曾手动改过）时，保留用户内容。
+    function autoFillAtlasNameFromSource(srcPath) {
+      const src = (srcPath || '').trim();
+      if (!atlasAutoGenerated && src === lastSourcePath) return; // 源未变且已手动改过，不覆盖
+      const name = baseName(src).trim();
+      if (!name) return;
+      document.getElementById('atlasName').value = name;
+      lastSourcePath = src;
+      atlasAutoGenerated = true;
+    }
+
+    // 指定源文件夹后，默认输出文件夹 = 源文件夹的父目录；
+    // 但只初始化一次——一旦初始化（或用户手动修改）后，就不再由代码自动修改。
+    function autoInitOutputFolder(srcPath) {
+      if (outInitialized) return; // 已初始化过，不再自动修改
+      const parent = pathDir((srcPath || '').trim());
+      if (!parent) return;
+      document.getElementById('outputFolder').value = parent;
+      outInitialized = true;
+    }
+
+    // ===== 本地模式：文件夹选择 + 拖拽识别目录 =====
+    function baseName(p) {
+      const norm = p.replace(/\\/g, '/');
+      const i = norm.lastIndexOf('/');
+      if (i >= 0 && i < p.length - 1) return p.slice(i + 1);
+      return p;
+    }
+    function normalizeNativePath(p) {
+      if (p.startsWith('/') && /^[A-Za-z]:/.test(p.slice(1))) return p.slice(1);
+      return p;
+    }
+    function pathDir(p) {
+      const i = Math.max(p.lastIndexOf('/'), p.lastIndexOf('\\'));
+      return i > 0 ? p.slice(0, i) : p;
+    }
+    function isCompletePath(p) {
+      if (!p) return false;
+      return /^[A-Za-z]:[\\/]/.test(p) || /^\\\\/.test(p);
+    }
+
+    [['inputFolder', 'browseInput'], ['outputFolder', 'browseOutput']].forEach(([inp, btn]) => {
+      const inputEl = document.getElementById(inp);
+      bindDropFolder(inputEl);
+      document.getElementById(btn).onclick = () => openPicker(inputEl);
+    });
+
+    function bindDropFolder(inputEl) {
+      inputEl.addEventListener('dragover', e => { e.preventDefault(); inputEl.classList.add('dropover'); });
+      inputEl.addEventListener('dragleave', e => { e.preventDefault(); inputEl.classList.remove('dropover'); });
+      inputEl.addEventListener('drop', e => {
+        e.preventDefault();
+        inputEl.classList.remove('dropover');
+        const files = e.dataTransfer.files;
+        const items = e.dataTransfer.items;
+        let dirPath = '';
+        let rawDetail = '';
+        if (files && files.length && files[0].path) {
+          const d = pathDir(files[0].path);
+          if (isCompletePath(d)) dirPath = d; else rawDetail = files[0].path;
+        }
+        if (!dirPath && items && items.length && items[0].webkitGetAsEntry) {
+          const en = items[0].webkitGetAsEntry();
+          if (en && en.fullPath) {
+            const d = pathDir(normalizeNativePath(en.fullPath));
+            if (isCompletePath(d)) dirPath = d; else if (!rawDetail) rawDetail = en.fullPath;
+          }
+        }
+        if (dirPath) { inputEl.value = dirPath; if (inputEl.id === 'inputFolder') { autoFillAtlasNameFromSource(dirPath); autoInitOutputFolder(dirPath); } status('', ''); }
+        else {
+          const got = rawDetail ? '（得到的是不完整路径：' + rawDetail + '）' : '（浏览器出于安全限制不提供完整本地路径）';
+          status('拖拽无法获取完整文件夹路径' + got + '\n已打开文件夹选择器，请从中选择。', '');
+          openPicker(inputEl);
+        }
+      });
+    }
+
+    // 文件夹选择器（服务器端目录浏览）
+    let pickerTarget = null;
+    let pickerCurrent = '';
+    const picker = document.getElementById('picker');
+    document.getElementById('pickerClose').onclick = () => picker.style.display = 'none';
+    document.getElementById('pickerSelect').onclick = () => {
+      if (pickerTarget) { pickerTarget.value = pickerCurrent || ''; if (pickerTarget.id === 'inputFolder') { autoFillAtlasNameFromSource(pickerCurrent); autoInitOutputFolder(pickerCurrent); } }
+      picker.style.display = 'none';
+    };
+    document.getElementById('pickerUp').onclick = () => loadDirs(pickerParent);
+    let pickerParent = '';
+    async function loadDirs(path) {
+      const res = await fetch('/api/dirs?path=' + encodeURIComponent(path || ''));
+      if (!res.ok) { status('读取目录失败: ' + (await res.text()), 'err'); return; }
+      const data = await res.json();
+      pickerCurrent = data.current;
+      pickerParent = data.parent;
+      document.getElementById('pickerPath').textContent = pickerCurrent || '（计算机根目录）';
+      const list = document.getElementById('pickerList');
+      list.innerHTML = '';
+      (data.dirs || []).forEach(d => {
+        const div = document.createElement('div');
+        div.className = 'picker-item';
+        div.textContent = baseName(d) || d;
+        div.onclick = () => loadDirs(d);
+        list.appendChild(div);
+      });
+      picker.style.display = 'flex';
+    }
+    function openPicker(inputEl) {
+      pickerTarget = inputEl;
+      loadDirs(pickerCurrent || '');
+    }
+
+    // 阻止拖到页面其它位置时浏览器直接打开图片文件（拖到放置区外也不会跳转离开页面）
+    window.addEventListener('dragover', e => e.preventDefault());
+    window.addEventListener('drop', e => e.preventDefault());
+
+    function refreshButtons() {
+      const ready = document.getElementById('inputFolder').value.trim().length > 0;
+      packBtn.disabled = !ready;
+      previewBtn.disabled = !ready;
+    }
+
+    // 用户手动修改 atlasName 后，标记为非自动生成（源文件夹不变则不自动覆盖；切换源文件夹会重新初始化）
+    document.getElementById('atlasName').addEventListener('input', () => { atlasAutoGenerated = false; });
+    // 用户手动修改输出文件夹后，也视为已初始化，之后不再由代码自动修改
+    document.getElementById('outputFolder').addEventListener('input', () => { outInitialized = true; });
+
+    // 重置：清空路径/参数/预览/状态，恢复到默认
+    const resetBtn = document.getElementById('resetBtn');
+    function resetAll() {
+      document.getElementById('inputFolder').value = '';
+      document.getElementById('outputFolder').value = '';
+      document.getElementById('maxSize').value = 2048;
+      document.getElementById('padding').value = 1;
+      document.getElementById('algorithm').value = 'best';
+      document.getElementById('format').value = 'generic';
+      document.getElementById('suffix').value = '.atlas.txt';
+      suffixTouched = false;
+      document.getElementById('allowRotation').checked = false;
+      document.getElementById('atlasName').value = '';
+      lastSourcePath = '';
+      atlasAutoGenerated = false;
+      outInitialized = false;
+      preview.innerHTML = '<span class="empty">设置好输入后点击「预览图集」查看效果</span>';
+      meta.innerHTML = '';
+      status('', '');
+      refreshButtons();
+    }
+    resetBtn.onclick = resetAll;
+    ['inputFolder', 'outputFolder'].forEach(id => document.getElementById(id).addEventListener('input', e => {
+      if (id === 'inputFolder') { autoFillAtlasNameFromSource(e.target.value); autoInitOutputFolder(e.target.value); }
+      refreshButtons();
+    }));
+
+    // ===== 预览 / 打包 =====
+    async function doPreview(silent) {
+      const inp = document.getElementById('inputFolder').value.trim();
+      if (!inp) return;
+      if (!silent) { previewBtn.disabled = true; status('预览生成中…', ''); }
+      try {
+        const p = new URLSearchParams({ inputFolder: inp, outputFolder: document.getElementById('outputFolder').value.trim(),
+          maxSize: document.getElementById('maxSize').value, padding: document.getElementById('padding').value,
+          algorithm: document.getElementById('algorithm').value, allowRotation: document.getElementById('allowRotation').checked,
+          atlasName: document.getElementById('atlasName').value.trim() });
+        p.append('_', Date.now().toString());
+        const res = await fetch('/api/preview?' + p.toString());
+        if (!res.ok) { if (!silent) status('预览失败：' + (await res.text()), 'err'); return; }
+        showPreview(res);
+        if (!silent) status('预览已生成（未写入磁盘）。', 'ok');
+      } catch (e) { if (!silent) status('错误：' + e.message, 'err'); }
+      finally { if (!silent) previewBtn.disabled = false; }
+    }
+
+    previewBtn.onclick = doPreview;
+    document.getElementById('algorithm').addEventListener('change', () => {
+      if (document.getElementById('inputFolder').value.trim()) doPreview();
+    });
+
+    packBtn.onclick = async () => {
+      const inp = document.getElementById('inputFolder').value.trim();
+      const out = document.getElementById('outputFolder').value.trim();
+      if (!inp) return;
+      if (!out) { status('请填写输出文件夹。', 'err'); return; }
+      packBtn.disabled = true; status('打包中…', '');
+      try {
+        const p = new URLSearchParams({ inputFolder: inp, outputFolder: out, maxSize: document.getElementById('maxSize').value,
+          padding: document.getElementById('padding').value, algorithm: document.getElementById('algorithm').value,
+          allowRotation: document.getElementById('allowRotation').checked,
+          atlasName: document.getElementById('atlasName').value.trim(),
+          format: document.getElementById('format').value, suffix: document.getElementById('suffix').value });
+        const res = await fetch('/api/pack?' + p.toString());
+        const txt = await res.text();
+        if (!res.ok) status('失败: ' + txt, 'err');
+        else { status('完成，已写入磁盘。\n' + txt + '\n格式：' + formatLabel() + '，后缀：' + document.getElementById('suffix').value, 'ok'); doPreview(true); }
+      } catch (e) { status('错误: ' + e.message, 'err'); }
+      finally { packBtn.disabled = false; }
+    };
+
+    refreshButtons();
+  </script>
+</body>
+</html>

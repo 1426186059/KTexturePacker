@@ -350,4 +350,117 @@ app.MapGet("/api/pack", (HttpContext ctx, string? inputFolder, string? outputFol
     return Results.Text("已生成图集：" + atlasPath + "（" + pages.Count + " 页，前缀 " + atlasName + "）", "text/plain; charset=utf-8");
 });
 
+// ---------- 多文件夹模式：根目录下每个子目录 = 一个独立图集 ----------
+
+// 枚举根目录下所有子目录，逐个构建图集。
+// 每项 (Name, Pngs, Pages, Error)：Error 为 null 时 Pngs/Pages 有效，调用方必须负责 Dispose。
+static List<(string Name, List<MemoryStream> Pngs, List<PackingResult> Pages, string? Error)> BuildAllSubAtlases(
+    string rootFolder, PackerSettings settings)
+{
+    var items = new List<(string, List<MemoryStream>, List<PackingResult>, string?)>();
+    foreach (var sub in Directory.EnumerateDirectories(rootFolder)
+                 .OrderBy(d => d, StringComparer.OrdinalIgnoreCase))
+    {
+        var name = SanitizeAtlasName(new DirectoryInfo(sub).Name);
+        if (string.IsNullOrEmpty(name)) name = "atlas";
+        var (pngs, pages, error) = BuildAtlasFromFolder(sub, null, settings);
+        items.Add((name, pngs!, pages!, error));
+    }
+    return items;
+}
+
+// 多文件夹预览：返回 JSON { items:[{name,error?} | {name,pages,count,realPages}], okCount, failCount, totalPages, totalSprites, totalUnplaced }
+app.MapGet("/api/multi-preview", (string? rootFolder, int? maxSize, int? padding, string? algorithm, bool? allowRotation) =>
+{
+    if (string.IsNullOrWhiteSpace(rootFolder) || !Directory.Exists(rootFolder))
+        return Results.Text("根目录不存在: " + (rootFolder ?? ""), "text/plain; charset=utf-8", statusCode: 400);
+
+    var settings = new PackerSettings
+    {
+        MaxSize = maxSize is > 0 ? maxSize.Value : 2048,
+        Padding = padding is >= 0 ? padding.Value : 1,
+        AllowRotation = allowRotation ?? false,
+        Algorithm = ParseAlgorithm(algorithm),
+    };
+
+    var items = new JsonArray();
+    int okCount = 0, failCount = 0, totalSprites = 0, totalUnplaced = 0, totalPages = 0;
+    const int previewMax = 512; // 与单文件夹模式一致：预览最长边固定
+    foreach (var (name, pngs, pages, error) in BuildAllSubAtlases(rootFolder, settings))
+    {
+        if (error is not null)
+        {
+            failCount++;
+            items.Add((JsonNode)new JsonObject { ["name"] = name, ["error"] = error });
+            continue;
+        }
+        okCount++;
+        totalPages += pages.Count;
+        totalSprites += pages.Sum(p => p.Sprites.Count);
+        totalUnplaced += pages.Sum(p => p.Unplaced.Count);
+        var obj = RenderPreviewPages(pngs, previewMax, pages);
+        obj["name"] = name;
+        obj["error"] = null;
+        items.Add((JsonNode)obj);
+        foreach (var p in pngs) p.Dispose();
+    }
+
+    var json = new JsonObject
+    {
+        ["items"] = items,
+        ["okCount"] = okCount,
+        ["failCount"] = failCount,
+        ["totalPages"] = totalPages,
+        ["totalSprites"] = totalSprites,
+        ["totalUnplaced"] = totalUnplaced,
+    };
+    return Results.Text(json.ToJsonString(), "application/json; charset=utf-8");
+});
+
+// 多文件夹打包：把根目录下每个子图集目录分别打包并写入输出文件夹（每个图集前缀 = 子目录名）
+app.MapGet("/api/multi-pack", (string? rootFolder, string? outputFolder, int? maxSize, int? padding, string? algorithm, bool? allowRotation, string? format, string? suffix) =>
+{
+    if (string.IsNullOrWhiteSpace(rootFolder) || !Directory.Exists(rootFolder))
+        return Results.Text("根目录不存在: " + (rootFolder ?? ""), "text/plain; charset=utf-8", statusCode: 400);
+    if (string.IsNullOrWhiteSpace(outputFolder))
+        return Results.Text("请填写输出文件夹。", "text/plain; charset=utf-8", statusCode: 400);
+
+    var settings = new PackerSettings
+    {
+        MaxSize = maxSize is > 0 ? maxSize.Value : 2048,
+        Padding = padding is >= 0 ? padding.Value : 1,
+        AllowRotation = allowRotation ?? false,
+        Algorithm = ParseAlgorithm(algorithm),
+    };
+    var fmt = ParseFormat(format);
+    var descSuffix = ParseSuffix(suffix, fmt);
+
+    int ok = 0, fail = 0;
+    var sb = new System.Text.StringBuilder();
+    foreach (var (name, pngs, pages, error) in BuildAllSubAtlases(rootFolder, settings))
+    {
+        if (error is not null)
+        {
+            fail++;
+            sb.AppendLine("✗ " + name + "：" + error);
+            continue;
+        }
+        var unplaced = pages.Sum(p => p.Unplaced.Count);
+        if (unplaced > 0)
+        {
+            fail++;
+            sb.AppendLine("✗ " + name + "：有 " + unplaced + " 张图片无法放入（可能单张超过最大边长），请调大 maxSize 或允许旋转。");
+            foreach (var p in pngs) p.Dispose();
+            continue;
+        }
+        var atlasPath = WriteAtlasToDisk(pages, pngs, outputFolder, name, fmt, descSuffix);
+        ok++;
+        sb.AppendLine("✓ " + name + "：" + pages.Count + " 页 → " + atlasPath);
+        foreach (var p in pngs) p.Dispose();
+    }
+
+    var head = ok == 0 ? "全部失败：" : fail == 0 ? "全部完成：" : "完成（部分失败）：";
+    return Results.Text(head + "\n" + sb, "text/plain; charset=utf-8", statusCode: ok == 0 ? 400 : 200);
+});
+
 app.Run();
