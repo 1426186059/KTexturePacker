@@ -33,13 +33,13 @@
     }
     header h1 { font-size: 18px; margin: 0; }
     header span { color: var(--muted); font-size: 13px; }
-    .modeToggle { margin-left: auto; display: flex; gap: 6px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 3px; }
-    .modeToggle button {
-      border: none; background: transparent; color: var(--muted);
-      padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 13px;
+    /* 原模式切换按钮位置：现固定为「仅本地模式」徽标，布局不变 */
+    .modeBadge {
+      margin-left: auto;
+      background: var(--accent); color: #fff;
+      padding: 6px 14px; border-radius: 6px; font-size: 13px;
+      white-space: nowrap;
     }
-    .modeToggle button.active { background: var(--accent); color: #fff; }
-    .modeToggle button:disabled { opacity: .35; cursor: not-allowed; }
 
     /* 顶部输入区 */
     .topbar { padding: 16px 24px; border-bottom: 1px solid var(--border); background: var(--panel); }
@@ -59,24 +59,6 @@
       border-radius: 8px; padding: 8px 14px; font-size: 13px; cursor: pointer; white-space: nowrap;
     }
     .browseBtn:hover { background: #2a3040; }
-
-    .dropzone {
-      border: 2px dashed var(--border); border-radius: 12px; padding: 26px 18px;
-      text-align: center; cursor: pointer; transition: border-color .15s, background .15s; margin-top: 4px;
-    }
-    .dropzone:hover { border-color: var(--accent); }
-    .dropzone.dropover { border-color: var(--accent); background: #232a3a; }
-    .dropzone .big { font-size: 15px; }
-    .dropzone .sub { color: var(--muted); font-size: 12px; margin-top: 6px; }
-    .dz-actions { margin-top: 14px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
-
-    .filelist { margin-top: 12px; font-size: 13px; color: var(--muted); }
-    .filelist .summary { color: var(--text); margin-bottom: 6px; }
-    .filelist .names {
-      max-height: 120px; overflow-y: auto; background: var(--panel-2); border: 1px solid var(--border);
-      border-radius: 8px; padding: 8px 10px; line-height: 1.7; word-break: break-all;
-    }
-    .filelist .names span + span::before { content: "、"; color: var(--muted); }
 
     .wrap { display: grid; grid-template-columns: 380px 1fr; gap: 18px; padding: 18px 24px; align-items: start; max-width: 1280px; margin: 0 auto; }
     @media (max-width: 760px) { .wrap { grid-template-columns: 1fr; } }
@@ -129,55 +111,29 @@
   <header>
     <h1>KTexturePacker</h1>
     <span>图集打包 · 基于 ASP.NET Core + MaxRects</span>
-    <div class="modeToggle">
-      <button id="modeLocal" class="active" type="button">本地模式</button>
-      <button id="modeRemote" type="button">远程模式</button>
-    </div>
+    <div class="modeBadge" title="只支持本地模式：浏览器必须与打包服务运行在同一台机器">仅本地模式</div>
   </header>
 
-  <!-- 顶部输入区 -->
+  <!-- 顶部输入区：只支持本地模式（服务器/本机磁盘路径） -->
   <div class="topbar">
     <div class="topbar-inner">
-      <!-- 本地模式：输入/输出文件夹 -->
-      <div id="localPanel">
-        <div class="field-row">
-          <div class="pathfield">
-            <label>输入文件夹</label>
-            <div class="inputwrap">
-              <input id="inputFolder" type="text" placeholder="如 D:\textures\in" />
-              <button class="browseBtn" id="browseInput" type="button">浏览…</button>
-            </div>
-          </div>
-          <div class="pathfield">
-            <label>输出文件夹</label>
-            <div class="inputwrap">
-              <input id="outputFolder" type="text" placeholder="留空则与输入文件夹相同" />
-              <button class="browseBtn" id="browseOutput" type="button">浏览…</button>
-            </div>
+      <div class="field-row">
+        <div class="pathfield">
+          <label>输入文件夹</label>
+          <div class="inputwrap">
+            <input id="inputFolder" type="text" placeholder="如 D:\textures\in" />
+            <button class="browseBtn" id="browseInput" type="button">浏览…</button>
           </div>
         </div>
-        <div class="hintline">本地模式适用于浏览器与服务器在同一台机器；路径是服务器（本机）磁盘路径。可直接把文件夹拖到输入框自动识别。</div>
+        <div class="pathfield">
+          <label>输出文件夹</label>
+          <div class="inputwrap">
+            <input id="outputFolder" type="text" placeholder="留空则与输入文件夹相同" />
+            <button class="browseBtn" id="browseOutput" type="button">浏览…</button>
+          </div>
+        </div>
       </div>
-
-      <!-- 远程模式：上传图片/文件夹 -->
-      <div id="remotePanel" style="display:none">
-        <div id="dropzone" class="dropzone">
-          <div class="big">把图片或文件夹拖到这里</div>
-          <div class="sub">支持递归读取整个文件夹里的图片（png/jpg/gif/bmp/webp/tga）</div>
-          <div class="dz-actions">
-            <button type="button" class="browseBtn" id="pickFiles">选择图片文件</button>
-            <button type="button" class="browseBtn" id="pickFolder">选择文件夹</button>
-            <button type="button" class="browseBtn" id="clearFiles">清空</button>
-          </div>
-          <input id="filesInput" type="file" accept="image/png,image/jpeg,image/gif,image/webp,image/bmp" multiple hidden />
-          <input id="folderInput" type="file" webkitdirectory multiple hidden />
-        </div>
-        <div class="filelist" id="filelist" style="display:none">
-          <div class="summary" id="fileSummary"></div>
-          <div class="names" id="fileNames"></div>
-        </div>
-        <div class="hintline">远程模式适用於服务器在远端：图片会先上传到服务器再打包，不依赖本机路径。</div>
-      </div>
+      <div class="hintline">⚠ 只支持本地模式：请在运行服务的同一台机器（localhost）访问本页面，填写的是服务器本机磁盘路径。可直接把文件夹拖到输入框自动识别。</div>
     </div>
   </div>
 
@@ -254,7 +210,7 @@
   </style>
 
   <script>
-    let mode = 'local';
+    // ===== 本地模式（唯一模式，本服务只支持本地模式）=====
     let lastSourcePath = '';   // 上次触发自动填充所用的源文件夹路径
     let atlasAutoGenerated = false; // 当前 atlasName 是否由系统自动生成（未手动改）
     let outInitialized = false;    // 输出文件夹是否已初始化过（一旦初始化，不再由代码自动修改）
@@ -268,15 +224,6 @@
     function status(msg, cls) { statusEl.textContent = msg; statusEl.className = 'status' + (cls ? ' ' + cls : ''); }
     function algoLabel() {
       return ({ best: 'Best Short Side Fit', long: 'Best Long Side Fit', bottomleft: 'Bottom-Left', contact: 'Contact Point' })[document.getElementById('algorithm').value] || '';
-    }
-    function getParams() {
-      return {
-        maxSize: document.getElementById('maxSize').value,
-        padding: document.getElementById('padding').value,
-        algorithm: document.getElementById('algorithm').value,
-        allowRotation: document.getElementById('allowRotation').checked,
-        atlasName: document.getElementById('atlasName').value.trim(),
-      };
     }
 
     async function showPreview(res) {
@@ -319,18 +266,6 @@
       if (an) txt += '<br/>导出前缀：<b>' + an + '</b>';
       meta.innerHTML = txt;
     }
-
-    // ===== 模式切换 =====
-    function setMode(m) {
-      mode = m;
-      document.getElementById('modeLocal').classList.toggle('active', m === 'local');
-      document.getElementById('modeRemote').classList.toggle('active', m === 'remote');
-      document.getElementById('localPanel').style.display = m === 'local' ? '' : 'none';
-      document.getElementById('remotePanel').style.display = m === 'remote' ? '' : 'none';
-      status('', '');
-    }
-    document.getElementById('modeLocal').onclick = () => setMode('local');
-    document.getElementById('modeRemote').onclick = () => setMode('remote');
 
     // 源文件夹变化（或首次设定）时，重新初始化 atlasName 为源文件夹名；
     // 源文件夹未变化（且用户曾手动改过）时，保留用户内容。
@@ -444,94 +379,12 @@
       loadDirs(pickerCurrent || '');
     }
 
-    // ===== 远程模式：上传 =====
-    const dropzone = document.getElementById('dropzone');
-    const filesInput = document.getElementById('filesInput');
-    const folderInput = document.getElementById('folderInput');
-    const filelist = document.getElementById('filelist');
-    const fileSummary = document.getElementById('fileSummary');
-    const fileNames = document.getElementById('fileNames');
-    let selectedFiles = [];
-    const fileKeys = new Set();
-
-    function isImageFile(name) { return /\.(png|jpe?g|gif|bmp|webp|tga)$/i.test(name); }
-    function formatBytes(n) {
-      if (n < 1024) return n + ' B';
-      if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
-      return (n / 1024 / 1024).toFixed(1) + ' MB';
-    }
-    function addFiles(list) {
-      let added = 0;
-      for (const f of list) {
-        const key = f.name + '|' + f.size;
-        if (fileKeys.has(key)) continue;
-        fileKeys.add(key); selectedFiles.push(f); added++;
-      }
-      if (added) renderFileList();
-      refreshButtons();
-    }
-    function renderFileList() {
-      const total = selectedFiles.reduce((a, f) => a + f.size, 0);
-      fileSummary.textContent = '已选择 ' + selectedFiles.length + ' 张图片 · 共 ' + formatBytes(total);
-      fileNames.innerHTML = '';
-      selectedFiles.slice(0, 60).forEach(f => {
-        const s = document.createElement('span'); s.textContent = f.name; fileNames.appendChild(s);
-      });
-      if (selectedFiles.length > 60) {
-        const s = document.createElement('span'); s.textContent = '…等 ' + selectedFiles.length + ' 张'; fileNames.appendChild(s);
-      }
-      filelist.style.display = selectedFiles.length ? 'block' : 'none';
-    }
-    async function readEntry(entry, out) {
-      if (entry.isFile) { await new Promise(res => entry.file(f => { if (f && isImageFile(f.name)) out.push(f); res(); })); }
-      else if (entry.isDirectory) {
-        const reader = entry.createReader();
-        let batch;
-        do { batch = await new Promise(res => reader.readEntries(res)); for (const e of batch) await readEntry(e, out); } while (batch.length > 0);
-      }
-    }
-    dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('dropover'); });
-    dropzone.addEventListener('dragleave', e => { e.preventDefault(); dropzone.classList.remove('dropover'); });
-    dropzone.addEventListener('drop', async e => {
-      e.preventDefault(); dropzone.classList.remove('dropover');
-      const items = e.dataTransfer.items; const collected = [];
-      if (items && items.length && items[0].webkitGetAsEntry) {
-        const entries = [];
-        for (const it of items) { const en = it.webkitGetAsEntry(); if (en) entries.push(en); }
-        for (const en of entries) { await readEntry(en, collected); if (!atlasAutoGenerated && en.isDirectory && en.name) autoFillAtlasNameFromSource(en.name); }
-      } else if (e.dataTransfer.files && e.dataTransfer.files.length) {
-        for (const f of e.dataTransfer.files) if (isImageFile(f.name)) collected.push(f);
-      }
-      if (collected.length) addFiles(collected); else status('拖入的内容里没有图片文件。', 'err');
-    });
-    dropzone.addEventListener('click', e => {
-      if (e.target === dropzone || e.target.classList.contains('big') || e.target.classList.contains('sub')) filesInput.click();
-    });
-    document.getElementById('pickFiles').onclick = e => { e.stopPropagation(); filesInput.click(); };
-    document.getElementById('pickFolder').onclick = e => { e.stopPropagation(); folderInput.click(); };
-    document.getElementById('clearFiles').onclick = e => {
-      e.stopPropagation(); selectedFiles = []; fileKeys.clear(); renderFileList(); refreshButtons(); status('', '');
-    };
-    filesInput.onchange = () => { addFiles(Array.from(filesInput.files).filter(f => isImageFile(f.name))); filesInput.value = ''; };
-    folderInput.onchange = () => {
-      const files = Array.from(folderInput.files).filter(f => isImageFile(f.name));
-      if (files.length && files[0].webkitRelativePath) {
-        // webkitRelativePath 形如 "folderName/sub/image.png"，取第一层文件夹名
-        const rel = files[0].webkitRelativePath;
-        const top = rel.indexOf('/') >= 0 ? rel.slice(0, rel.indexOf('/')) : rel;
-        autoFillAtlasNameFromSource(top);
-      }
-      addFiles(files); folderInput.value = '';
-    };
-
     // 阻止拖到页面其它位置时浏览器直接打开图片文件（拖到放置区外也不会跳转离开页面）
     window.addEventListener('dragover', e => e.preventDefault());
     window.addEventListener('drop', e => e.preventDefault());
 
     function refreshButtons() {
-      const ready = mode === 'local'
-        ? document.getElementById('inputFolder').value.trim().length > 0
-        : selectedFiles.length > 0;
+      const ready = document.getElementById('inputFolder').value.trim().length > 0;
       packBtn.disabled = !ready;
       previewBtn.disabled = !ready;
     }
@@ -541,12 +394,11 @@
     // 用户手动修改输出文件夹后，也视为已初始化，之后不再由代码自动修改
     document.getElementById('outputFolder').addEventListener('input', () => { outInitialized = true; });
 
-    // 重置：清空路径/已选文件/参数/预览/状态，恢复到默认
+    // 重置：清空路径/参数/预览/状态，恢复到默认
     const resetBtn = document.getElementById('resetBtn');
     function resetAll() {
       document.getElementById('inputFolder').value = '';
       document.getElementById('outputFolder').value = '';
-      selectedFiles = []; fileKeys.clear(); renderFileList();
       document.getElementById('maxSize').value = 2048;
       document.getElementById('padding').value = 1;
       document.getElementById('algorithm').value = 'best';
@@ -568,110 +420,46 @@
 
     // ===== 预览 / 打包 =====
     async function doPreview(silent) {
-      if (mode === 'local') {
-        const inp = document.getElementById('inputFolder').value.trim();
-        if (!inp) return;
-        if (!silent) { previewBtn.disabled = true; status('预览生成中…', ''); }
-        try {
-          const p = new URLSearchParams({ inputFolder: inp, outputFolder: document.getElementById('outputFolder').value.trim(),
-            maxSize: document.getElementById('maxSize').value, padding: document.getElementById('padding').value,
-            algorithm: document.getElementById('algorithm').value, allowRotation: document.getElementById('allowRotation').checked,
-            atlasName: document.getElementById('atlasName').value.trim() });
-          p.append('_', Date.now().toString());
-          const res = await fetch('/api/preview-local?' + p.toString());
-          if (!res.ok) { if (!silent) status('预览失败：' + (await res.text()), 'err'); return; }
-          showPreview(res);
-          if (!silent) status('预览已生成（未写入磁盘）。', 'ok');
-        } catch (e) { if (!silent) status('错误：' + e.message, 'err'); }
-        finally { if (!silent) previewBtn.disabled = false; }
-      } else {
-        if (!selectedFiles.length) return;
-        if (!silent) { previewBtn.disabled = true; status('预览生成中…', ''); }
-        try {
-          const fd = buildForm();
-          fd.append('_', Date.now().toString());
-          const res = await fetch('/api/preview', { method: 'POST', body: fd });
-          if (!res.ok) { if (!silent) status('预览失败：' + (await res.text() || res.status), 'err'); return; }
-          showPreview(res);
-          if (!silent) status('预览已生成（未下载）。', 'ok');
-        } catch (e) { if (!silent) status('错误：' + e.message, 'err'); }
-        finally { if (!silent) previewBtn.disabled = false; }
-      }
+      const inp = document.getElementById('inputFolder').value.trim();
+      if (!inp) return;
+      if (!silent) { previewBtn.disabled = true; status('预览生成中…', ''); }
+      try {
+        const p = new URLSearchParams({ inputFolder: inp, outputFolder: document.getElementById('outputFolder').value.trim(),
+          maxSize: document.getElementById('maxSize').value, padding: document.getElementById('padding').value,
+          algorithm: document.getElementById('algorithm').value, allowRotation: document.getElementById('allowRotation').checked,
+          atlasName: document.getElementById('atlasName').value.trim() });
+        p.append('_', Date.now().toString());
+        const res = await fetch('/api/preview?' + p.toString());
+        if (!res.ok) { if (!silent) status('预览失败：' + (await res.text()), 'err'); return; }
+        showPreview(res);
+        if (!silent) status('预览已生成（未写入磁盘）。', 'ok');
+      } catch (e) { if (!silent) status('错误：' + e.message, 'err'); }
+      finally { if (!silent) previewBtn.disabled = false; }
     }
 
     previewBtn.onclick = doPreview;
     document.getElementById('algorithm').addEventListener('change', () => {
-      if (mode === 'local' ? document.getElementById('inputFolder').value.trim() : selectedFiles.length) doPreview();
+      if (document.getElementById('inputFolder').value.trim()) doPreview();
     });
 
     packBtn.onclick = async () => {
-      if (mode === 'local') {
-        const inp = document.getElementById('inputFolder').value.trim();
-        const out = document.getElementById('outputFolder').value.trim();
-        if (!inp) return;
-        if (!out) { status('本地模式请填写输出文件夹。', 'err'); return; }
-        packBtn.disabled = true; status('打包中…', '');
-        try {
-          const p = new URLSearchParams({ inputFolder: inp, outputFolder: out, maxSize: document.getElementById('maxSize').value,
-            padding: document.getElementById('padding').value, algorithm: document.getElementById('algorithm').value,
-            allowRotation: document.getElementById('allowRotation').checked,
-            atlasName: document.getElementById('atlasName').value.trim() });
-          const res = await fetch('/api/pack-local?' + p.toString());
-          const txt = await res.text();
-          if (!res.ok) status('失败: ' + txt, 'err');
-          else { status('完成，已写入磁盘。\n' + txt, 'ok'); doPreview(true); }
-        } catch (e) { status('错误: ' + e.message, 'err'); }
-        finally { packBtn.disabled = false; }
-      } else {
-        if (!selectedFiles.length) return;
-        packBtn.disabled = true; status('打包中…', '');
-        try {
-          const an = getParams().atlasName;
-          const res = await fetch('/api/pack', { method: 'POST', body: buildForm() });
-          if (!res.ok) { status('失败: ' + (await res.text() || res.status), 'err'); return; }
-          const blob = await res.blob();
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement('a'); a.href = url;
-          a.download = an ? an + '.zip' : 'atlas.zip';
-          document.body.appendChild(a); a.click(); a.remove();
-          const base = an || 'atlas';
-          status('完成，已下载 ' + base + '.zip（含 ' + base + '_0.png…、' + base + '.atlas.json（JSON）与 ' + base + '.atlas（libGDX），多页自动分图）。', 'ok');
-          doPreview(true);
-        } catch (e) { status('错误: ' + e.message, 'err'); }
-        finally { packBtn.disabled = false; }
-      }
-    };
-
-    function buildForm() {
-      const fd = new FormData();
-      for (const f of selectedFiles) fd.append('files', f, f.name);
-      const p = getParams();
-      fd.append('maxSize', p.maxSize); fd.append('padding', p.padding);
-      fd.append('algorithm', p.algorithm); fd.append('allowRotation', p.allowRotation);
-      fd.append('atlasName', p.atlasName);
-      return fd;
-    }
-
-    // 自动判定模式：服务器是否和浏览器同机。
-    // 本地模式需要服务器按磁盘路径读盘，仅当服务本机（localhost/回环）才有意义。
-    const modeLocalBtn = document.getElementById('modeLocal');
-    (async () => {
+      const inp = document.getElementById('inputFolder').value.trim();
+      const out = document.getElementById('outputFolder').value.trim();
+      if (!inp) return;
+      if (!out) { status('请填写输出文件夹。', 'err'); return; }
+      packBtn.disabled = true; status('打包中…', '');
       try {
-        const r = await fetch('/api/mode');
-        if (!r.ok) return;
-        const j = await r.json();
-        if (j.local) {
-          setMode('local');
-          modeLocalBtn.disabled = false;
-        } else {
-          setMode('remote');           // 远程：强制上传模式
-          modeLocalBtn.disabled = true; // 禁用本地模式（服务器在别处，读不到你的磁盘）
-          modeLocalBtn.title = '本地模式需要服务运行在本机（通过 localhost 访问）';
-        }
-      } catch {
-        // 检测失败则保留默认（本地）模式，用户可手动切换
-      }
-    })();
+        const p = new URLSearchParams({ inputFolder: inp, outputFolder: out, maxSize: document.getElementById('maxSize').value,
+          padding: document.getElementById('padding').value, algorithm: document.getElementById('algorithm').value,
+          allowRotation: document.getElementById('allowRotation').checked,
+          atlasName: document.getElementById('atlasName').value.trim() });
+        const res = await fetch('/api/pack?' + p.toString());
+        const txt = await res.text();
+        if (!res.ok) status('失败: ' + txt, 'err');
+        else { status('完成，已写入磁盘。\n' + txt, 'ok'); doPreview(true); }
+      } catch (e) { status('错误: ' + e.message, 'err'); }
+      finally { packBtn.disabled = false; }
+    };
 
     refreshButtons();
   </script>

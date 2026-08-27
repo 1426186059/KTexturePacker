@@ -3,7 +3,7 @@ using KTexturePacker.Core;
 using SkiaSharp;
 
 // ============================================================================
-//  KTexturePacker.Web —— 仅本地运行模式（LOCAL-ONLY）
+//  KTexturePacker.Web —— 只支持本地模式（LOCAL-ONLY）
 //  本服务只接受「磁盘文件夹路径」输入，直接在服务器本机读图、打包、写盘。
 //  不支持任何远程文件上传（无 multipart / 无 zip 下载端点）。
 //  必须在运行服务的同一台机器上打开浏览器使用（localhost）。
