@@ -97,7 +97,8 @@ static bool IsImageFile(string name)
 static bool IsToolOutput(string name)
 {
     if (name.Equals("atlas.png", StringComparison.OrdinalIgnoreCase)) return true;
-    return System.Text.RegularExpressions.Regex.IsMatch(name, @"^atlas_\d+\.png$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+    if (name.Equals("atlas.webp", StringComparison.OrdinalIgnoreCase)) return true;
+    return System.Text.RegularExpressions.Regex.IsMatch(name, @"^atlas_\d+\.(png|webp)$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 }
 
 // 清理图集名字中的文件系统非法字符，避免写盘失败。
@@ -134,11 +135,13 @@ static string ResolveAtlasName(string? given, string? outputFolder, string? inpu
     return string.IsNullOrEmpty(name) ? "atlas" : name;
 }
 
-static (List<MemoryStream> Pngs, List<PackingResult> Pages, string? Error) BuildAtlasFromFolder(
-    string inputFolder, string? outputFolder, PackerSettings settings)
+// 从文件夹读图，交给共享核心 KTexturePacker.Core.AtlasBaker 完成「装箱 + 合成 + 编码 + 导出」，
+// 返回统一的 AtlasBakeResult（每页图像字节 + 通用格式 AtlasData JSON + 用于 PixiJS 的 AutoPages）。
+static (AtlasBaker.AtlasBakeResult Result, string? Error) BuildAtlasFromFolder(
+    string inputFolder, string? outputFolder, PackerSettings settings, AtlasBakeOptions bakeOptions)
 {
     if (string.IsNullOrWhiteSpace(inputFolder) || !Directory.Exists(inputFolder))
-        return (null!, null!, "输入文件夹不存在: " + (inputFolder ?? ""));
+        return (null!, "输入文件夹不存在: " + (inputFolder ?? ""));
     if (string.IsNullOrWhiteSpace(outputFolder)) outputFolder = inputFolder;
 
     var inputs = new List<SpriteInput>();
@@ -158,50 +161,26 @@ static (List<MemoryStream> Pngs, List<PackingResult> Pages, string? Error) Build
     }
 
     if (inputs.Count == 0)
-        return (null!, null!, "该文件夹下没有可解码的图片（仅支持 png/jpg/gif/bmp/webp/tga）。");
+        return (null!, "该文件夹下没有可解码的图片（仅支持 png/jpg/gif/bmp/webp/tga）。");
 
-    var pages = AtlasPacker.PackPages(inputs, settings);
-    var (pngs, error) = RenderPages(pages);
-    foreach (var s in inputs) s.Bitmap.Dispose();
-    return (pngs, pages, error);
-}
-
-// 把每页打包结果渲染成 PNG 流（每张图一个 MemoryStream）
-static (List<MemoryStream> Pngs, string? Error) RenderPages(List<PackingResult> pages)
-{
-    var pngs = new List<MemoryStream>();
-    foreach (var page in pages)
-    {
-        using var atlas = AtlasPacker.RenderAtlas(page);
-        using var data = atlas.Encode(SKEncodedImageFormat.Png, 100);
-        if (data is null)
-        {
-            foreach (var p in pngs) p.Dispose();
-            return (null!, "图集编码失败。");
-        }
-        var ms = new MemoryStream();
-        data.AsStream().CopyTo(ms);
-        ms.Position = 0;
-        pngs.Add(ms);
-    }
-    return (pngs, null);
+    var result = AtlasBaker.Bake(inputs, null, settings, bakeOptions);
+    return (result, null);
 }
 
 // 预览：把每个图集页整张按比例缩放到「最长边 ≤ previewMax」输出（保持原图比例，不切分）。
 // 每页预览都附带其对应真实图集页的尺寸（realW/realH），便于前端区分「预览尺寸」与「实际图集尺寸」。
-// 注意：必须从已渲染的 PNG 流缩放，不能从 pages 重新绘制——源 SKBitmap 在 BuildAtlas* 里已释放。
-static JsonObject RenderPreviewPages(IReadOnlyList<MemoryStream> pngs, int previewMax, IReadOnlyList<PackingResult> realPages)
+static JsonObject RenderPreviewPages(AtlasBaker.AtlasBakeResult result, int previewMax)
 {
     previewMax = Math.Clamp(previewMax, 64, 4096);
     var arr = new JsonArray();
     var realArr = new JsonArray();
-    for (int pi = 0; pi < pngs.Count; pi++)
+    for (int pi = 0; pi < result.Pages.Count; pi++)
     {
-        int realW = realPages[pi].AtlasWidth, realH = realPages[pi].AtlasHeight;
+        int realW = pi < result.AutoPages.Count ? result.AutoPages[pi].AtlasWidth : result.Pages[pi].Width;
+        int realH = pi < result.AutoPages.Count ? result.AutoPages[pi].AtlasHeight : result.Pages[pi].Height;
         realArr.Add((JsonNode)new JsonObject { ["w"] = realW, ["h"] = realH });
 
-        var ms = pngs[pi];
-        ms.Position = 0;
+        using var ms = new MemoryStream(result.Pages[pi].Bytes);
         using var bmp = SKBitmap.Decode(ms)!;
         int w = bmp.Width, h = bmp.Height;
 
@@ -254,34 +233,35 @@ static JsonObject RenderPreviewPages(IReadOnlyList<MemoryStream> pngs, int previ
     return new JsonObject { ["pages"] = arr, ["count"] = arr.Count, ["realPages"] = realArr };
 }
 
-// 写入服务器磁盘：{atlasName}_0.png … + 描述 JSON（后缀可独立指定，空则按格式默认：PixiJS=.atlas.json，其余=.atlas.txt）
+// 写入服务器磁盘：{atlasName}_0.{png|webp} … + 描述 JSON（后缀可独立指定，空则按格式默认：PixiJS=.atlas.json，其余=.atlas.txt）
 // PixiJS 多页：除主文件外，每页各写一个独立 Spritesheet JSON（文件名 = atlasName_i + suffix，与 related_multi_packs 一致）
-static string WriteAtlasToDisk(List<PackingResult> pages, List<MemoryStream> pngs, string outputFolder, string atlasName, AtlasFormat format, string suffix)
+static string WriteAtlasToDisk(AtlasBaker.AtlasBakeResult result, string outputFolder, string atlasName, AtlasFormat format, string suffix)
 {
     if (!Directory.Exists(outputFolder)) Directory.CreateDirectory(outputFolder);
-    var imageNames = new List<string>();
-    for (int i = 0; i < pages.Count; i++)
+    const string ext = ".png";
+    for (int i = 0; i < result.Pages.Count; i++)
     {
-        var imgName = atlasName + "_" + i + ".png";
-        imageNames.Add(imgName);
-        var pngPath = Path.Combine(outputFolder, imgName);
-        using (var fs = File.OpenWrite(pngPath)) { pngs[i].Position = 0; pngs[i].CopyTo(fs); }
+        var pngPath = Path.Combine(outputFolder, atlasName + "_" + i + ext);
+        File.WriteAllBytes(pngPath, result.Pages[i].Bytes);
     }
 
     if (format == AtlasFormat.PixiJS)
     {
-        var main = AtlasExporter.ToPixiJson(pages, imageNames, atlasName, suffix);
+        var imageNames = new List<string>();
+        for (int i = 0; i < result.AutoPages.Count; i++)
+            imageNames.Add(atlasName + "_" + i + ext);
+        var main = AtlasExporter.ToPixiJson(result.AutoPages, imageNames, atlasName, suffix);
         File.WriteAllText(Path.Combine(outputFolder, atlasName + suffix), main);
-        for (int i = 1; i < pages.Count; i++)
+        for (int i = 1; i < result.AutoPages.Count; i++)
         {
-            var pageJson = AtlasExporter.ToPixiJsonPage(pages[i], imageNames[i], AtlasExporter.BuildAnimationsForPage(pages, i));
+            var pageJson = AtlasExporter.ToPixiJsonPage(result.AutoPages[i], imageNames[i], AtlasExporter.BuildAnimationsForPage(result.AutoPages, i));
             File.WriteAllText(Path.Combine(outputFolder, atlasName + "_" + i + suffix), pageJson);
         }
     }
     else
     {
-        var desc = AtlasExporter.ToJson(pages, imageNames, format);
-        File.WriteAllText(Path.Combine(outputFolder, atlasName + suffix), desc);
+        // 通用格式：直接写共享核心产出的 AtlasData JSON（已含全部页）
+        File.WriteAllText(Path.Combine(outputFolder, atlasName + suffix), result.AtlasJson);
     }
     return Path.Combine(outputFolder, atlasName + suffix);
 }
@@ -323,16 +303,16 @@ app.MapGet("/api/preview", (HttpContext ctx, string? inputFolder, string? output
         AllowRotation = allowRotation ?? false,
         Algorithm = ParseAlgorithm(algorithm),
     };
+    var bakeOptions = new AtlasBakeOptions();
 
-    var (pngs, pages, error) = BuildAtlasFromFolder(inputFolder ?? "", outputFolder, settings);
+    var (result, error) = BuildAtlasFromFolder(inputFolder ?? "", outputFolder, settings, bakeOptions);
     if (error is not null)
         return Results.Text(error, "text/plain; charset=utf-8", statusCode: 400);
 
-    SetMetaHeaders(ctx, pages);
+    SetMetaHeaders(ctx, result.AutoPages);
     ctx.Response.Headers["X-Atlas-Name"] = ResolveAtlasName(ctx.Request.Query["atlasName"], outputFolder, inputFolder);
     const int previewMax = 512; // 预览最大边长固定写死，不再由前端传参
-    var json = RenderPreviewPages(pngs, previewMax, pages);
-    foreach (var p in pngs) p.Dispose();
+    var json = RenderPreviewPages(result, previewMax);
     return Results.Text(json.ToJsonString(), "application/json; charset=utf-8");
 });
 
@@ -346,41 +326,38 @@ app.MapGet("/api/pack", (HttpContext ctx, string? inputFolder, string? outputFol
         AllowRotation = allowRotation ?? false,
         Algorithm = ParseAlgorithm(algorithm),
     };
+    var bakeOptions = new AtlasBakeOptions();
     var fmt = ParseFormat(format);
     var descSuffix = ParseSuffix(suffix, fmt);
 
-    var (pngs, pages, error) = BuildAtlasFromFolder(inputFolder ?? "", outputFolder, settings);
+    var (result, error) = BuildAtlasFromFolder(inputFolder ?? "", outputFolder, settings, bakeOptions);
     if (error is not null)
         return Results.Text(error, "text/plain; charset=utf-8", statusCode: 400);
 
-    var unplaced = pages.Sum(p => p.Unplaced.Count);
+    var unplaced = result.AutoPages.Sum(p => p.Unplaced.Count);
     if (unplaced > 0)
-    {
-        foreach (var p in pngs) p.Dispose();
         return Results.Text($"有 {unplaced} 张图片无法放入（可能单张超过最大边长），请调大 maxSize 或拆分。", "text/plain; charset=utf-8", statusCode: 400);
-    }
 
     var atlasName = ResolveAtlasName(ctx.Request.Query["atlasName"], outputFolder, inputFolder);
-    var atlasPath = WriteAtlasToDisk(pages, pngs, outputFolder!, atlasName, fmt, descSuffix);
-    foreach (var p in pngs) p.Dispose();
-    return Results.Text("已生成图集：" + atlasPath + "（" + pages.Count + " 页，前缀 " + atlasName + "）", "text/plain; charset=utf-8");
+    var atlasPath = WriteAtlasToDisk(result, outputFolder!, atlasName, fmt, descSuffix);
+    return Results.Text("已生成图集：" + atlasPath + "（" + result.Pages.Count + " 页，前缀 " + atlasName + "）", "text/plain; charset=utf-8");
 });
 
 // ---------- 多文件夹模式：根目录下每个子目录 = 一个独立图集 ----------
 
 // 枚举根目录下所有子目录，逐个构建图集。
-// 每项 (Name, Pngs, Pages, Error)：Error 为 null 时 Pngs/Pages 有效，调用方必须负责 Dispose。
-static List<(string Name, List<MemoryStream> Pngs, List<PackingResult> Pages, string? Error)> BuildAllSubAtlases(
-    string rootFolder, PackerSettings settings)
+// 每项 (Name, Result, Error)：Error 为 null 时 Result 有效，调用方负责处理。
+static List<(string Name, AtlasBaker.AtlasBakeResult Result, string? Error)> BuildAllSubAtlases(
+    string rootFolder, PackerSettings settings, AtlasBakeOptions bakeOptions)
 {
-    var items = new List<(string, List<MemoryStream>, List<PackingResult>, string?)>();
+    var items = new List<(string, AtlasBaker.AtlasBakeResult, string?)>();
     foreach (var sub in Directory.EnumerateDirectories(rootFolder)
                  .OrderBy(d => d, StringComparer.OrdinalIgnoreCase))
     {
         var name = SanitizeAtlasName(new DirectoryInfo(sub).Name);
         if (string.IsNullOrEmpty(name)) name = "atlas";
-        var (pngs, pages, error) = BuildAtlasFromFolder(sub, null, settings);
-        items.Add((name, pngs!, pages!, error));
+        var (result, error) = BuildAtlasFromFolder(sub, null, settings, bakeOptions);
+        items.Add((name, result!, error));
     }
     return items;
 }
@@ -398,11 +375,12 @@ app.MapGet("/api/multi-preview", (string? rootFolder, int? maxSize, int? padding
         AllowRotation = allowRotation ?? false,
         Algorithm = ParseAlgorithm(algorithm),
     };
+    var bakeOptions = new AtlasBakeOptions();
 
     var items = new JsonArray();
     int okCount = 0, failCount = 0, totalSprites = 0, totalUnplaced = 0, totalPages = 0;
     const int previewMax = 512; // 与单文件夹模式一致：预览最长边固定
-    foreach (var (name, pngs, pages, error) in BuildAllSubAtlases(rootFolder, settings))
+    foreach (var (name, result, error) in BuildAllSubAtlases(rootFolder, settings, bakeOptions))
     {
         if (error is not null)
         {
@@ -411,14 +389,13 @@ app.MapGet("/api/multi-preview", (string? rootFolder, int? maxSize, int? padding
             continue;
         }
         okCount++;
-        totalPages += pages.Count;
-        totalSprites += pages.Sum(p => p.Sprites.Count);
-        totalUnplaced += pages.Sum(p => p.Unplaced.Count);
-        var obj = RenderPreviewPages(pngs, previewMax, pages);
+        totalPages += result.Pages.Count;
+        totalSprites += result.AutoPages.Sum(p => p.Sprites.Count);
+        totalUnplaced += result.AutoPages.Sum(p => p.Unplaced.Count);
+        var obj = RenderPreviewPages(result, previewMax);
         obj["name"] = name;
         obj["error"] = null;
         items.Add((JsonNode)obj);
-        foreach (var p in pngs) p.Dispose();
     }
 
     var json = new JsonObject
@@ -448,12 +425,13 @@ app.MapGet("/api/multi-pack", (string? rootFolder, string? outputFolder, int? ma
         AllowRotation = allowRotation ?? false,
         Algorithm = ParseAlgorithm(algorithm),
     };
+    var bakeOptions = new AtlasBakeOptions();
     var fmt = ParseFormat(format);
     var descSuffix = ParseSuffix(suffix, fmt);
 
     int ok = 0, fail = 0;
     var sb = new System.Text.StringBuilder();
-    foreach (var (name, pngs, pages, error) in BuildAllSubAtlases(rootFolder, settings))
+    foreach (var (name, result, error) in BuildAllSubAtlases(rootFolder, settings, bakeOptions))
     {
         if (error is not null)
         {
@@ -461,18 +439,16 @@ app.MapGet("/api/multi-pack", (string? rootFolder, string? outputFolder, int? ma
             sb.AppendLine("✗ " + name + "：" + error);
             continue;
         }
-        var unplaced = pages.Sum(p => p.Unplaced.Count);
+        var unplaced = result.AutoPages.Sum(p => p.Unplaced.Count);
         if (unplaced > 0)
         {
             fail++;
             sb.AppendLine("✗ " + name + "：有 " + unplaced + " 张图片无法放入（可能单张超过最大边长），请调大 maxSize 或允许旋转。");
-            foreach (var p in pngs) p.Dispose();
             continue;
         }
-        var atlasPath = WriteAtlasToDisk(pages, pngs, outputFolder, name, fmt, descSuffix);
+        var atlasPath = WriteAtlasToDisk(result, outputFolder, name, fmt, descSuffix);
         ok++;
-        sb.AppendLine("✓ " + name + "：" + pages.Count + " 页 → " + atlasPath);
-        foreach (var p in pngs) p.Dispose();
+        sb.AppendLine("✓ " + name + "：" + result.Pages.Count + " 页 → " + atlasPath);
     }
 
     var head = ok == 0 ? "全部失败：" : fail == 0 ? "全部完成：" : "完成（部分失败）：";
