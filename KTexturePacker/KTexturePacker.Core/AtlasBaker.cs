@@ -105,7 +105,9 @@ public static class AtlasBaker
                 string pageJson = AtlasExporter.ToGenericJson(
                     new[] { packed[i] }, new[] { name + ".png" });
                 var pageObj = (JsonObject)((JsonArray)((JsonObject)JsonNode.Parse(pageJson)!)["pages"]!)[0]!;
-                pagesJson.Add(pageObj);
+                // DeepClone 拿到脱离父节点的副本：pageObj 仍挂在 JsonNode.Parse 的临时树上，
+                // 直接加入 pagesJson 会抛 "The node already has a parent"。
+                pagesJson.Add(pageObj.DeepClone());
             }
 
             index += packed.Count;
