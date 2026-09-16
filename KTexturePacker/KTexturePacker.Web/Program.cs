@@ -180,9 +180,10 @@ static JsonObject RenderPreviewPages(AtlasBaker.AtlasBakeResult result, int prev
         int realH = pi < result.AutoPages.Count ? result.AutoPages[pi].AtlasHeight : result.Pages[pi].Height;
         realArr.Add((JsonNode)new JsonObject { ["w"] = realW, ["h"] = realH });
 
-        using var ms = new MemoryStream(result.Pages[pi].Bytes);
-        using var bmp = SKBitmap.Decode(ms)!;
-        int w = bmp.Width, h = bmp.Height;
+        var page = result.Pages[pi];
+        int w = page.Width, h = page.Height;
+        using var srcBmp = new SKBitmap(w, h, SKColorType.Rgba8888, SKAlphaType.Unpremul);
+        page.RgbaPixels.CopyTo(srcBmp.GetPixelSpan());
 
         // 整张按比例缩放到最长边 ≤ previewMax
         int tw = w, th = h;
@@ -213,7 +214,7 @@ static JsonObject RenderPreviewPages(AtlasBaker.AtlasBakeResult result, int prev
             using var pageBg = new SKPaint { Color = new SKColor(0x23, 0x28, 0x33) };
             canvas.DrawRect(new SKRect(pad, pad, pad + tw, pad + th), pageBg);
             // 页面内容
-            canvas.DrawBitmap(bmp,
+            canvas.DrawBitmap(srcBmp,
                 new SKRect(0, 0, w, h),
                 new SKRect(pad, pad, pad + tw, pad + th),
                 new SKSamplingOptions(SKFilterMode.Linear));
@@ -242,7 +243,7 @@ static string WriteAtlasToDisk(AtlasBaker.AtlasBakeResult result, string outputF
     for (int i = 0; i < result.Pages.Count; i++)
     {
         var pngPath = Path.Combine(outputFolder, atlasName + "_" + i + ext);
-        File.WriteAllBytes(pngPath, result.Pages[i].Bytes);
+        File.WriteAllBytes(pngPath, result.Pages[i].ToPng());
     }
 
     if (format == AtlasFormat.PixiJS)
