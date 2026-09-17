@@ -456,4 +456,222 @@ app.MapGet("/api/multi-pack", (string? rootFolder, string? outputFolder, int? ma
     return Results.Text(head + "\n" + sb, "text/plain; charset=utf-8", statusCode: ok == 0 ? 400 : 200);
 });
 
+// ---------- 图集反解（单张图集 → 拆成一个个小图） ----------
+
+// 扩展名过滤：filter 为逗号分隔的扩展名列表（可带点），命中任一即通过；
+// 额外支持复合后缀场景（如 hero.atlas.txt —— 既算 .txt 也算 .atlas.txt）。
+static bool IsAllowedExt(string file, string? filter)
+{
+    if (string.IsNullOrWhiteSpace(filter)) return true;
+    var set = filter.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+        .Select(x => x.StartsWith('.') ? x : "." + x)
+        .ToHashSet(StringComparer.OrdinalIgnoreCase);
+    if (set.Count == 0) return true;
+
+    string name = Path.GetFileName(file);
+    if (set.Contains(Path.GetExtension(name))) return true;
+    foreach (var ext in set)
+        if (name.EndsWith(ext, StringComparison.OrdinalIgnoreCase)) return true;
+    return false;
+}
+
+// 反解页专用的服务器端浏览：在目录列表基础上额外列出符合条件的文件（供选择图集图片 / 描述文件）。
+app.MapGet("/api/files", (string? path, string? filter) =>
+{
+    try
+    {
+        string current, parent;
+        List<string> dirs;
+        List<string> files;
+
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            current = "";
+            parent = "";
+            dirs = System.IO.DriveInfo.GetDrives().Where(d => d.IsReady).Select(d => d.RootDirectory.FullName).ToList();
+            files = new List<string>();
+        }
+        else
+        {
+            var dir = new DirectoryInfo(path);
+            if (!dir.Exists) return Results.Text("目录不存在: " + path, "text/plain; charset=utf-8", statusCode: 400);
+            current = dir.FullName;
+            parent = dir.Parent?.FullName ?? "";
+            dirs = dir.EnumerateDirectories().OrderBy(d => d.Name, StringComparer.OrdinalIgnoreCase).Select(d => d.FullName).ToList();
+            files = dir.EnumerateFiles()
+                .Where(f => IsAllowedExt(f.FullName, filter))
+                .OrderBy(f => f.Name, StringComparer.OrdinalIgnoreCase)
+                .Select(f => f.FullName)
+                .ToList();
+        }
+
+        var json = new JsonObject
+        {
+            ["current"] = current,
+            ["parent"] = parent,
+            ["dirs"] = new JsonArray(dirs.Select(d => (JsonNode)d).ToArray()),
+            ["files"] = new JsonArray(files.Select(f => (JsonNode)f).ToArray()),
+        };
+        return Results.Text(json.ToJsonString(), "application/json; charset=utf-8");
+    }
+    catch (Exception ex)
+    {
+        return Results.Text("读取目录失败: " + ex.Message, "text/plain; charset=utf-8", statusCode: 500);
+    }
+});
+
+// 把一张小图（PNG 字节）等比缩放到最长边 ≤ thumbMax 后返回 base64 PNG；本来就在限制内则直接返回原图字节。
+static string MakeThumb(byte[] spritePng, int thumbMax)
+{
+    using var bmp = SKBitmap.Decode(spritePng);
+    if (bmp is null) return "";
+
+    int longest = Math.Max(bmp.Width, bmp.Height);
+    if (longest <= thumbMax && longest > 0) return Convert.ToBase64String(spritePng);
+
+    double scale = (double)thumbMax / longest;
+    int tw = Math.Max(1, (int)Math.Round(bmp.Width * scale));
+    int th = Math.Max(1, (int)Math.Round(bmp.Height * scale));
+
+    using var scaled = new SKBitmap(tw, th, SKColorType.Rgba8888, SKAlphaType.Unpremul);
+    using (var canvas = new SKCanvas(scaled))
+    {
+        canvas.Clear(SKColors.Transparent);
+        canvas.DrawBitmap(bmp, new SKRect(0, 0, bmp.Width, bmp.Height), new SKRect(0, 0, tw, th),
+            new SKSamplingOptions(SKFilterMode.Linear));
+    }
+    using var img = SKImage.FromBitmap(scaled);
+    using var data = img.Encode(SKEncodedImageFormat.Png, 100);
+    return Convert.ToBase64String(data.ToArray());
+}
+
+// 扫描一个文件夹：找出其中所有「图集」（自动识别通用格式 / PixiJS 描述文件），逐个拆图并返回缩略图（不写盘）。
+// 非图集文件一律忽略。
+app.MapGet("/api/unpack-preview", (HttpContext ctx, string? inputFolder, string? outputFolder, int? limit) =>
+{
+    if (string.IsNullOrWhiteSpace(inputFolder) || !Directory.Exists(inputFolder))
+        return Results.Text("输入文件夹不存在: " + (inputFolder ?? ""), "text/plain; charset=utf-8", statusCode: 400);
+
+    try
+    {
+        string outDir = string.IsNullOrWhiteSpace(outputFolder)
+            ? AtlasFolderUnpacker.DefaultOutputFolder(inputFolder)
+            : outputFolder;
+
+        var sources = AtlasFolderUnpacker.Discover(inputFolder);
+        const int thumbMax = 128;                        // 缩略图最长边固定，控制响应体大小
+        int budget = Math.Clamp(limit ?? 200, 1, 5000);  // 全部图集合计最多返回多少张缩略图
+
+        var atlasArr = new JsonArray();
+        var failures = new JsonArray();
+        int totalSprites = 0, totalSkipped = 0, totalShown = 0;
+
+        foreach (var src in sources)
+        {
+            try
+            {
+                var result = AtlasUnpacker.Unpack(src.AtlasImage, src.Description);
+                totalSprites += result.Sprites.Count;
+                totalSkipped += result.Skipped;
+
+                var arr = new JsonArray();
+                int take = Math.Min(result.Sprites.Count, budget);
+                for (int i = 0; i < take; i++)
+                {
+                    var s = result.Sprites[i];
+                    arr.Add((JsonNode)new JsonObject
+                    {
+                        ["name"] = s.Name,
+                        ["file"] = s.FileName,
+                        ["w"] = s.Width,
+                        ["h"] = s.Height,
+                        ["x"] = s.SourceX,
+                        ["y"] = s.SourceY,
+                        ["rotated"] = s.WasRotated,
+                        ["png"] = MakeThumb(s.Bytes, thumbMax),
+                    });
+                }
+                budget -= take;
+                totalShown += take;
+
+                atlasArr.Add((JsonNode)new JsonObject
+                {
+                    ["key"] = src.Key,
+                    ["image"] = Path.GetFileName(src.AtlasImage),
+                    ["imagePath"] = src.AtlasImage,
+                    ["desc"] = Path.GetFileName(src.Description),
+                    ["pageIndex"] = src.PageIndex,
+                    ["page"] = new JsonObject { ["w"] = src.PageWidth, ["h"] = src.PageHeight },
+                    ["fromPixiJs"] = src.FromPixiJs,
+                    ["total"] = result.Sprites.Count,
+                    ["shown"] = take,
+                    ["skipped"] = result.Skipped,
+                    ["sprites"] = arr,
+                });
+            }
+            catch (Exception ex)
+            {
+                failures.Add((JsonNode)(Path.GetFileName(src.AtlasImage) + "：" + ex.Message));
+            }
+        }
+
+        var json = new JsonObject
+        {
+            ["inputFolder"] = inputFolder,
+            ["outputFolder"] = outDir,
+            ["atlasCount"] = sources.Count,
+            ["totalSprites"] = totalSprites,
+            ["totalShown"] = totalShown,
+            ["totalSkipped"] = totalSkipped,
+            ["atlases"] = atlasArr,
+            ["failures"] = failures,
+        };
+
+        ctx.Response.Headers["X-Atlas-Count"] = sources.Count.ToString();
+        ctx.Response.Headers["X-Sprite-Total"] = totalSprites.ToString();
+        ctx.Response.Headers["X-Skip-Count"] = totalSkipped.ToString();
+        return Results.Text(json.ToJsonString(), "application/json; charset=utf-8");
+    }
+    catch (Exception ex)
+    {
+        return Results.Text("扫描/反解失败: " + ex.Message, "text/plain; charset=utf-8", statusCode: 400);
+    }
+});
+
+// 反解并写入磁盘：遍历输入文件夹，把所有图集拆成小图，输出到输出文件夹（多个图集各自一个子目录）。
+app.MapGet("/api/unpack", (string? inputFolder, string? outputFolder, string? format) =>
+{
+    if (string.IsNullOrWhiteSpace(inputFolder) || !Directory.Exists(inputFolder))
+        return Results.Text("输入文件夹不存在: " + (inputFolder ?? ""), "text/plain; charset=utf-8", statusCode: 400);
+
+    var fmt = string.Equals(format, "webp", StringComparison.OrdinalIgnoreCase)
+        ? AtlasUnpacker.OutputFormat.Webp
+        : AtlasUnpacker.OutputFormat.Png;
+
+    try
+    {
+        var result = AtlasFolderUnpacker.UnpackFolder(inputFolder, outputFolder, fmt);
+        string ext = AtlasUnpacker.ExtOf(fmt);
+
+        if (result.Atlases.Count == 0 && result.Failures.Count == 0)
+            return Results.Text("在输入文件夹里没有发现任何图集（需要「图集图片 + 描述文件」成对存在）。", "text/plain; charset=utf-8", statusCode: 400);
+
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine("✓ 共识别出 " + result.Atlases.Count + " 个图集，拆出 " + result.SpriteCount + " 张小图（" + ext + "）");
+        sb.AppendLine("输出目录：" + result.OutputFolder);
+        foreach (var a in result.Atlases)
+            sb.AppendLine("  ✓ " + a.Key + "：" + a.Sprites.Count + " 张 → " + a.OutputFolder);
+        foreach (var f in result.Failures)
+            sb.AppendLine("  ✗ " + f);
+        if (result.SkippedCount > 0)
+            sb.AppendLine("⚠ 有 " + result.SkippedCount + " 个区域越界或尺寸非法，已跳过。");
+
+        return Results.Text(sb.ToString().TrimEnd('\r', '\n'), "text/plain; charset=utf-8");
+    }
+    catch (Exception ex)
+    {
+        return Results.Text("反解失败: " + ex.Message, "text/plain; charset=utf-8", statusCode: 400);
+    }
+});
+
 app.Run();

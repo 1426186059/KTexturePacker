@@ -12,4 +12,18 @@
     <PackageReference Include="SkiaSharp" Version="4.152.0" />
   </ItemGroup>
 
+  <!-- 编译完成后，把产物 DLL 复制到仓库根目录下的 AAA 目录（约定好的 DLL 投放点，方便直接拷进 Unity 等工程）。
+       AAA 目录相对本项目目录为 ..\..\AAA\；用 $() 组合路径避免不同盘符/斜杠写法导致失败。 -->
+  <PropertyGroup>
+    <KtpDllDropDir>$([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)', '..', '..', 'AAA'))</KtpDllDropDir>
+  </PropertyGroup>
+
+  <Target Name="CopyCoreDllToAAA" AfterTargets="Build">
+    <MakeDir Directories="$(KtpDllDropDir)" Condition="!Exists('$(KtpDllDropDir)')" />
+    <Copy SourceFiles="$(TargetPath)"
+          DestinationFolder="$(KtpDllDropDir)"
+          SkipUnchangedFiles="true" />
+    <Message Importance="high" Text="[KTexturePacker.Core] 已复制 $(TargetFileName) → $(KtpDllDropDir)" />
+  </Target>
+
 </Project>

@@ -49,6 +49,18 @@
 - **互不影响**：某个子文件夹无图片或图片放不下时单独标记失败，**不影响其他子图集的打包**。
 - **输出干净**：所有子图集平铺输出到同一个输出文件夹（`hero_0.png` / `hero.atlas.txt`、`npc_0.png` / `npc.atlas.txt`…），目录层级一目了然。
 
+### 三、图集反解（已发布图集 → 拆回小图）
+
+输入**一个文件夹**，自动遍历（含子目录）把里面「凡是图集的」全拆出来，不是图集的文件一律忽略。
+
+- **自动识别图集**：逐个尝试候选描述文件（`*.json` / `*.txt` / `*.atlas*`），能按通用格式或 PixiJS v8 解析出 pages / frames、且 `image` 指向的图片真实存在，才算一个图集。一张孤立的图片、普通文本、非图集 JSON 都会自动跳过。
+- **多页图集**：一个多页描述文件会拆出多个图集（`npc` / `npc_1` …），各自独立输出，互不覆盖。
+- **旋转自动还原**：打包时顺时针 90° 存放的旋转子图，反解时按逆时针 90° 还原回原始朝向（尺寸取 `sourceW`/`sourceH`）。
+- **默认输出目录**：`<输入文件夹的同级目录>\<输入目录名>.Atlas.UnPack`，例：`D:\out\atlases` → `D:\out\atlases.Atlas.UnPack`。只有**一个**图集时小图直接放在该目录；有多个图集时按描述文件名各建一个子目录。
+- **先预览后落盘**：预览按图集分组列出所有小图缩略图与元信息（不写盘），确认后一键全部拆出。
+- **默认输出 PNG**：小图默认 `.png`，需要时可在页面切换成 `.webp`（Core 的 `AtlasUnpacker.OutputFormat` 同时支持两种）。
+- **文件名安全**：子图名中的非法字符会被清洗，重名自动追加序号，保证每张都能成功写盘。
+
 ## 支持的游戏引擎（导出格式）
 
 本工具只导出 **PNG 大图 + JSON 描述文件**，不绑定任何引擎 SDK；引擎侧按格式解析即可对接。配套提供 `KTexturePacker.Parser`（`KAtlasTool.GetUVRegion` / `GetUV01Region`）辅助解析，已把「坐标系翻转 + 旋转烘焙」进 UV，开箱即用。
@@ -68,22 +80,34 @@
 >     "regions": [ { "name": "hero", "x": 0, "y": 0, "w": 64, "h": 64, "rotated": false, "sourceW": 64, "sourceH": 64 } ] } ] }
 > ```
 
-## 页面结构（3 个页面）
+## 页面结构（4 个页面）
 
 | 页面 | 文件 | 说明 |
 |------|------|------|
-| 主页面 | `wwwroot/index.html` | 两个菜单入口：单文件夹处理 / 多文件夹处理 |
+| 主页面 | `wwwroot/index.html` | 三个菜单入口：单文件夹处理 / 多文件夹处理 / 图集反解 |
 | 单文件夹处理 | `wwwroot/single.html` | 上述「核心能力 · 一」的完整操作界面 |
 | 多文件夹处理 | `wwwroot/multi.html` | 上述「核心能力 · 二」的完整操作界面 |
+| 图集反解 | `wwwroot/unpack.html` | 上述「核心能力 · 三」的完整操作界面（输入文件夹，遍历其中的图集全部拆开） |
 
-三个页面共用同一套顶部导航，可随时切换。
+四个页面共用同一套顶部导航，可随时切换。
 
 ## 架构
 
 | 项目 | 说明 |
 |------|------|
-| `KTexturePacker.Core` | 类库：MaxRectsPacker、AtlasPacker（Skia 合成）、AtlasExporter、PackerSettings。引用 SkiaSharp 4.150.1。 |
-| `KTexturePacker.Web` | ASP.NET Core Minimal API（`PublishAot=true`），提供 Web UI 与打包接口。 |
+| `KTexturePacker.Core` | 类库：MaxRectsPacker、AtlasPacker（Skia 合成）、AtlasBaker、AtlasExporter、PackerSettings、`JsonFormat/`（强类型 JSON 模型）、AtlasUnpacker + AtlasFolderUnpacker（单张 / 文件夹批量图集反解）。引用 SkiaSharp 4.152.0。**每次编译完成后会自动把产物 DLL 复制到仓库根目录的 `AAA/` 目录。** |
+| `KTexturePacker.Web` | ASP.NET Core Minimal API（`PublishAot=true`），提供 Web UI 与打包 / 反解接口。 |
+
+> JSON 读取统一走强类型模型（`AtlasData` / `PixiAtlasSheet`）+ System.Text.Json 源生成上下文 `AtlasJsonContext`，
+> 因此在 `PublishAot=true` 下无反射裁剪警告，同时导出与反解共用同一份结构定义。
+
+**`JsonFormat/` 目录：每种 JSON 格式一套强类型类**（命名空间统一为 `KTexturePacker.Core.JsonFormat`）
+
+| 目录 | 文件 | 对应 JSON 结构 |
+|------|------|----------------|
+| `JsonFormat/` | `AtlasJsonContext.cs` | System.Text.Json 源生成上下文（AOT 安全） |
+| `JsonFormat/Generic/` | `AtlasData.cs` / `AtlasPageData.cs` / `AtlasRegionData.cs` | 通用格式 `pages` / 单页 `image,width,height` / 单区域 `name,x,y,w,h,rotated,sourceW,sourceH` |
+| `JsonFormat/PixiJS/` | `PixiAtlasSheet.cs` / `PixiFrameData.cs` / `PixiMetaData.cs` / `PixiRectData.cs` / `PixiSizeData.cs` | PixiJS v8 `frames,meta,animations` / `frame,rotated,trimmed,spriteSourceSize,sourceSize` / `image,size,scale,related_multi_packs` / `{x,y,w,h}` / `{w,h}` |
 
 ## 运行
 
@@ -126,6 +150,9 @@ dotnet publish -c Release -r win-x64 KTexturePacker.Web/KTexturePacker.Web.cspro
 | GET | `/api/pack?inputFolder=&outputFolder=&maxSize=&padding=&algorithm=&allowRotation=&atlasName=&format=&suffix=` | 单文件夹打包，写入磁盘。 |
 | GET | `/api/multi-preview?rootFolder=&maxSize=&padding=&algorithm=&allowRotation=` | 多文件夹预览，返回每个子图集的缩略图与状态 JSON。 |
 | GET | `/api/multi-pack?rootFolder=&outputFolder=&maxSize=&padding=&algorithm=&allowRotation=&format=&suffix=` | 多文件夹打包，逐个子图集写入磁盘。 |
+| GET | `/api/files?path=<路径>&filter=<扩展名列表>` | 列出目录 + 符合条件的文件（`filter` 为逗号分隔扩展名，如 `png,webp` / `txt,json`），前端目录/文件选择器用。 |
+| GET | `/api/unpack-preview?inputFolder=<文件夹>&outputFolder=&limit=<预览上限>` | 遍历文件夹找出所有图集，按图集分组返回小图缩略图与元信息（不写盘）。 |
+| GET | `/api/unpack?inputFolder=<文件夹>&outputFolder=&format=png\|webp` | 遍历文件夹反解所有图集并写盘；`outputFolder` 留空用默认目录，`format` 留空即默认 `png`。 |
 
 **公共参数**：
 
@@ -140,6 +167,25 @@ dotnet publish -c Release -r win-x64 KTexturePacker.Web/KTexturePacker.Web.cspro
 
 **响应（预览，多文件夹）**：JSON `{ items:[{name,error} | {name,pages,count,realPages}], okCount, failCount, totalPages, totalSprites, totalUnplaced }`。
 
+**响应（图集反解预览）**：JSON `{ inputFolder, outputFolder, atlasCount, totalSprites, totalShown, totalSkipped, failures[], atlases:[{key,image,imagePath,desc,pageIndex,page:{w,h},fromPixiJs,total,shown,skipped,sprites:[{name,file,w,h,x,y,rotated,png}]}] }`，`png` 为最长边 ≤ 128px 的缩略图。
+
+**响应头（反解预览）**：`X-Atlas-Count`（识别到的图集数）、`X-Sprite-Total`（小图总数）、`X-Skip-Count`（跳过数）。
+
+**强类型 JSON 模型**（导出与反解共用，`KTexturePacker.Core`）：
+
+```csharp
+AtlasData data = AtlasData.FromFile("atlas.atlas.txt");        // 读
+data.Pages[0].Regions[0].Rotated                                // 直接访问，无需 JsonNode
+string json = AtlasData.FromPackingResults(pages, names).ToJson(); // 写
+
+var one = AtlasUnpacker.Unpack("atlas_0.png", "atlas.atlas.txt");   // 反解指定一张图集
+AtlasUnpacker.UnpackToFolder("atlas_0.png", null, "out");           // 直接落盘（描述文件可自动猜测）
+
+// 文件夹批量：遍历找出所有图集并拆开，默认输出到 输入目录名.Atlas.UnPack
+var batch = AtlasFolderUnpacker.UnpackFolder("D:/out/atlases");
+foreach (var a in batch.Atlases) Console.WriteLine($"{a.Key}: {a.Sprites.Count} 张 → {a.OutputFolder}");
+```
+
 **响应头（预览）**：`X-Atlas-Width` / `X-Atlas-Height`（首页尺寸）、`X-Sprite-Count`（已放置总数）、`X-Page-Count`（页数）、`X-Unplaced-Count`（放不下的图片数）、`X-Atlas-Name`（单文件夹模式导出的前缀名）。
 
 ## 支持的图片格式
@@ -152,3 +198,4 @@ dotnet publish -c Release -r win-x64 KTexturePacker.Web/KTexturePacker.Web.cspro
 - **只支持本地模式**：服务须运行在你本机，浏览器通过磁盘路径访问（浏览器自身无法用磁盘路径读文件，因此远程部署时该模式不适用）。
 - 单张图片本身超过 `maxSize` 时无法放入任何一页，会被丢弃并提示「N 张无法放入」。此时需调大 `maxSize` 或拆分该图。
 - 多文件夹模式下，某个子图集失败（无图片 / 图片放不下）不会中断其他子图集的打包，结果会逐项列出。
+- 「图集反解」按文件夹遍历，只处理「图集图片 + 描述文件」成套的内容；孤立的图片、普通文本、非图集 JSON 会被忽略。未被任何图集引用的图片不会被拆。

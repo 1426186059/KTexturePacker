@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using System.Text;
-using System.Text.Json;
 using System.Text.Json.Nodes;
+using KTexturePacker.Core.JsonFormat;
 
 namespace KTexturePacker.Core;
 
@@ -40,42 +40,10 @@ public static class AtlasExporter
     /// <summary>
     /// 生成通用 JSON 格式（单文件含所有 page 与每页精灵帧信息）。
     /// 结构：{ pages: [ { image, width, height, regions: [ { name, x, y, w, h, rotated, sourceW, sourceH } ] } ], animations? }
-    /// 使用 JsonNode 构建，避免 AOT 下的反射（IL3050/IL2026）。
+    /// 由强类型模型 <see cref="AtlasData"/> 负责序列化（走 AtlasJsonContext 源生成，避免 AOT 下的反射 IL3050/IL2026）。
     /// </summary>
     public static string ToGenericJson(IReadOnlyList<PackingResult> pages, IReadOnlyList<string> imageNames)
-    {
-        var pagesArr = new JsonArray();
-        for (int i = 0; i < pages.Count; i++)
-        {
-            var result = pages[i];
-            var pageObj = new JsonObject
-            {
-                ["image"] = imageNames[i],
-                ["width"] = result.AtlasWidth,
-                ["height"] = result.AtlasHeight,
-            };
-            var regions = new JsonArray();
-            foreach (var p in result.Sprites)
-            {
-                var region = new JsonObject
-                {
-                    ["name"] = p.Name,
-                    ["x"] = p.X,
-                    ["y"] = p.Y,
-                    ["w"] = p.Width,
-                    ["h"] = p.Height,
-                    ["rotated"] = p.Rotated,
-                    ["sourceW"] = p.SourceWidth,
-                    ["sourceH"] = p.SourceHeight,
-                };
-                regions.Add((JsonNode)region);
-            }
-            pageObj["regions"] = regions;
-            pagesArr.Add((JsonNode)pageObj);
-        }
-        var root = new JsonObject { ["pages"] = pagesArr };
-        return root.ToJsonString(new JsonSerializerOptions { WriteIndented = false });
-    }
+        => AtlasData.FromPackingResults(pages, imageNames).ToJson();
 
     // ============================================================
     //  PixiJS v8 Spritesheet 官方格式（frames / meta / animations）
@@ -90,36 +58,30 @@ public static class AtlasExporter
     /// </summary>
     public static string ToPixiJson(IReadOnlyList<PackingResult> pages, IReadOnlyList<string> imageNames, string atlasBaseName = "atlas", string suffix = ".json")
     {
-        var frames = new JsonObject();
-        for (int i = 0; i < pages[0].Sprites.Count; i++)
+        var sheet = new PixiAtlasSheet
         {
-            var p = pages[0].Sprites[i];
-            frames[p.Name] = BuildPixiFrame(p);
-        }
-
-        var meta = new JsonObject
-        {
-            ["image"] = imageNames[0],
-            ["size"] = new JsonObject { ["w"] = pages[0].AtlasWidth, ["h"] = pages[0].AtlasHeight },
-            ["scale"] = 1,
+            Meta = new PixiMetaData
+            {
+                Image = imageNames[0],
+                Size = new PixiSizeData(pages[0].AtlasWidth, pages[0].AtlasHeight),
+                Scale = 1,
+            },
         };
+
+        foreach (var p in pages[0].Sprites)
+            sheet.Frames[p.Name] = BuildPixiFrame(p);
 
         if (pages.Count > 1)
         {
-            var related = new JsonArray();
+            var related = new List<string>();
             for (int i = 1; i < pages.Count; i++)
-                related.Add((JsonNode)(atlasBaseName + "_" + i + suffix));
-            meta["related_multi_packs"] = related;
+                related.Add(atlasBaseName + "_" + i + suffix);
+            sheet.Meta.RelatedMultiPacks = related;
         }
 
-        var root = new JsonObject
-        {
-            ["frames"] = frames,
-            ["meta"] = meta,
-        };
         var anims = BuildAnimationsForPage(pages, 0);
-        if (anims.Count > 0) root["animations"] = AnimationsToJson(anims);
-        return root.ToJsonString(new JsonSerializerOptions { WriteIndented = false });
+        sheet.Animations = anims is { Count: > 0 } ? anims : null;
+        return sheet.ToJson();
     }
 
     /// <summary>
@@ -128,36 +90,34 @@ public static class AtlasExporter
     /// </summary>
     public static string ToPixiJsonPage(PackingResult page, string imageName, Dictionary<string, List<string>>? animations = null)
     {
-        var frames = new JsonObject();
-        foreach (var p in page.Sprites)
-            frames[p.Name] = BuildPixiFrame(p);
-
-        var root = new JsonObject
+        var sheet = new PixiAtlasSheet
         {
-            ["frames"] = frames,
-            ["meta"] = new JsonObject
+            Meta = new PixiMetaData
             {
-                ["image"] = imageName,
-                ["size"] = new JsonObject { ["w"] = page.AtlasWidth, ["h"] = page.AtlasHeight },
-                ["scale"] = 1,
+                Image = imageName,
+                Size = new PixiSizeData(page.AtlasWidth, page.AtlasHeight),
+                Scale = 1,
             },
         };
-        if (animations is { Count: > 0 }) root["animations"] = AnimationsToJson(animations);
-        return root.ToJsonString(new JsonSerializerOptions { WriteIndented = false });
+
+        foreach (var p in page.Sprites)
+            sheet.Frames[p.Name] = BuildPixiFrame(p);
+
+        sheet.Animations = animations is { Count: > 0 } ? animations : null;
+        return sheet.ToJson();
     }
 
-    private static JsonObject BuildPixiFrame(PackedSprite p)
+    private static PixiFrameData BuildPixiFrame(PackedSprite p)
     {
         // frame 始终填源方向尺寸（rotated 时由 PixiJS 解析器内部交换为图集内尺寸）
-        var f = new JsonObject
+        return new PixiFrameData
         {
-            ["frame"] = new JsonObject { ["x"] = p.X, ["y"] = p.Y, ["w"] = p.SourceWidth, ["h"] = p.SourceHeight },
-            ["rotated"] = p.Rotated,
-            ["trimmed"] = false,
-            ["spriteSourceSize"] = new JsonObject { ["x"] = 0, ["y"] = 0, ["w"] = p.SourceWidth, ["h"] = p.SourceHeight },
-            ["sourceSize"] = new JsonObject { ["w"] = p.SourceWidth, ["h"] = p.SourceHeight },
+            Frame = new PixiRectData(p.X, p.Y, p.SourceWidth, p.SourceHeight),
+            Rotated = p.Rotated,
+            Trimmed = false,
+            SpriteSourceSize = new PixiRectData(0, 0, p.SourceWidth, p.SourceHeight),
+            SourceSize = new PixiSizeData(p.SourceWidth, p.SourceHeight),
         };
-        return f;
     }
 
     // ============================================================
@@ -243,6 +203,15 @@ public static class AtlasExporter
             obj[kv.Key] = arr;
         }
         return obj;
+    }
+
+    /// <summary>
+    /// 由精灵名推导动画分组后，转成可直接写入描述文件的 animations 节点（供自定义导出使用）。
+    /// </summary>
+    public static JsonObject? BuildAnimationsJson(IReadOnlyList<PackingResult> pages, int pageIndex = 0)
+    {
+        var anims = BuildAnimationsForPage(pages, pageIndex);
+        return anims is { Count: > 0 } ? AnimationsToJson(anims) : null;
     }
 
     // ============================================================
