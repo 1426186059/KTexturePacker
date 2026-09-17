@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using KTexturePacker.Core;
+using KTexturePacker.Core.JsonFormat;
 using SkiaSharp;
 
 // ============================================================================
@@ -62,7 +63,7 @@ app.MapGet("/api/dirs", (string? path) =>
         else
         {
             var dir = new DirectoryInfo(path);
-            if (!dir.Exists) return Results.Text("目录不存在: " + path, "text/plain; charset=utf-8", statusCode: 400);
+            if (!dir.Exists) return Results.Text("目录不存在：" + FullPathOf(path), "text/plain; charset=utf-8", statusCode: 400);
             current = dir.FullName;
             parent = dir.Parent?.FullName ?? "";
             dirs = dir.EnumerateDirectories()
@@ -101,25 +102,63 @@ static bool IsToolOutput(string name)
     return System.Text.RegularExpressions.Regex.IsMatch(name, @"^atlas_\d+\.(png|webp)$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 }
 
-// 判断某图片是否就是「本次即将写出的图集页」：<图集名>.png / <图集名>_0.png …
-// 仅在「输出目录 = 输入目录」时用于排除上一轮产物（避免把即将被覆盖的旧图集再喂进去）。
-static bool IsThisRunOutput(string name, string? atlasName)
+// 描述文件名 → 图集名（去掉 .atlas / .json / .txt 等所有扩展名，如 hero.atlas.txt → hero）
+static string DescriptionStem(string file)
 {
-    if (string.IsNullOrWhiteSpace(atlasName)) return false;
-    string stem = Path.GetFileNameWithoutExtension(name);
-    string ext = Path.GetExtension(name).ToLowerInvariant();
-    if (ext is not (".png" or ".webp")) return false;
-    if (stem.Equals(atlasName, StringComparison.OrdinalIgnoreCase)) return true;
-    if (!stem.StartsWith(atlasName + "_", StringComparison.OrdinalIgnoreCase)) return false;
-    string tail = stem[(atlasName.Length + 1)..];
-    return tail.Length > 0 && tail.All(char.IsDigit);
+    string name = Path.GetFileNameWithoutExtension(file);
+    while (true)
+    {
+        var ext = Path.GetExtension(name);
+        if (string.IsNullOrEmpty(ext)) break;
+        name = name[..^ext.Length];
+    }
+    return string.IsNullOrEmpty(name) ? "atlas" : name;
 }
 
-static bool SameDirectory(string? a, string? b)
+static bool IsDescriptionCandidate(string file)
 {
-    if (string.IsNullOrWhiteSpace(a) || string.IsNullOrWhiteSpace(b)) return false;
-    static string Norm(string p) => Path.GetFullPath(p).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-    return string.Equals(Norm(a), Norm(b), StringComparison.OrdinalIgnoreCase);
+    var ext = Path.GetExtension(file).ToLowerInvariant();
+    return ext is ".json" or ".txt" or ".atlas" || file.EndsWith(".atlas.txt", StringComparison.OrdinalIgnoreCase);
+}
+
+// 出错时把路径补全（用户填的相对路径/末尾带斜杠等），保证提示里给的是完整路径、能直接复制定位。
+static string FullPathOf(string? path)
+{
+    if (string.IsNullOrWhiteSpace(path)) return "（空）";
+    try { return Path.GetFullPath(path); }
+    catch { return path; }
+}
+
+// 收集「本文件夹里已被描述文件声明为图集页」的图片名 —— 这些是图集产物，不能再当素材喂进去，
+// 否则图集会越滚越大。
+// 注意：只排除描述文件**真正引用**的图集页，绝不按「图集名 + 数字」这种宽松规则排除，
+// 否则会把拆包出来的散图（如 Map_1.png、Map_2.png…）误当图集页清掉，导致「明明有图却报没有图片」。
+static HashSet<string> CollectAtlasOutputImages(string folder)
+{
+    var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    if (!Directory.Exists(folder)) return set;
+
+    foreach (var desc in Directory.EnumerateFiles(folder))
+    {
+        if (!IsDescriptionCandidate(desc)) continue;
+
+        AtlasData data;
+        try { data = AtlasUnpacker.LoadDescription(File.ReadAllText(desc), out _); }
+        catch { continue; }          // 不是图集描述文件
+        if (data.Pages.Count == 0) continue;
+
+        string stem = DescriptionStem(desc);
+        for (int i = 0; i < data.Pages.Count; i++)
+        {
+            var img = data.Pages[i].Image;
+            if (!string.IsNullOrWhiteSpace(img))
+                set.Add(Path.GetFileName(img.Replace('\\', '/')));
+            // 描述里的 image 名与实际文件不一致时的兜底（image=atlas_0.png、文件 Map_0.png）
+            set.Add(stem + "_" + i + ".png");
+            set.Add(stem + "_" + i + ".webp");
+        }
+    }
+    return set;
 }
 
 // 清理图集名字中的文件系统非法字符，避免写盘失败。
@@ -158,25 +197,25 @@ static string ResolveAtlasName(string? given, string? outputFolder, string? inpu
 
 // 从文件夹读图，交给共享核心 KTexturePacker.Core.AtlasBaker 完成「装箱 + 合成 + 编码 + 导出」，
 // 返回统一的 AtlasBakeResult（每页图像字节 + 通用格式 AtlasData JSON + 用于 PixiJS 的 AutoPages）。
-// atlasName：本次图集名（同时决定描述文件里的 image 字段与写盘的 PNG 文件名，两者必须一致）。
-// 输出目录与输入目录相同时，额外排除本次即将覆盖的旧图集页，避免旧产物被再次喂入。
 static (AtlasBaker.AtlasBakeResult Result, string? Error) BuildAtlasFromFolder(
-    string inputFolder, string? outputFolder, PackerSettings settings, AtlasBakeOptions bakeOptions, string? atlasName = null)
+    string inputFolder, string? outputFolder, PackerSettings settings, AtlasBakeOptions bakeOptions)
 {
     if (string.IsNullOrWhiteSpace(inputFolder) || !Directory.Exists(inputFolder))
-        return (null!, "输入文件夹不存在: " + (inputFolder ?? ""));
+        return (null!, "输入文件夹不存在：" + FullPathOf(inputFolder));
     if (string.IsNullOrWhiteSpace(outputFolder)) outputFolder = inputFolder;
 
-    bool excludeOwn = SameDirectory(inputFolder, outputFolder);
+    // 本文件夹里已被描述文件声明为「图集页」的图片 = 图集产物，不作为素材喂入
+    var atlasOutputs = CollectAtlasOutputImages(inputFolder);
+    int excludedAsAtlas = 0;
 
     var inputs = new List<SpriteInput>();
     var names = new List<string>();
     foreach (var file in Directory.EnumerateFiles(inputFolder)
-                 .Where(f => IsImageFile(f)
-                             && !IsToolOutput(Path.GetFileName(f))
-                             && !(excludeOwn && IsThisRunOutput(Path.GetFileName(f), atlasName)))
+                 .Where(f => IsImageFile(f) && !IsToolOutput(Path.GetFileName(f)))
                  .OrderBy(f => f, StringComparer.OrdinalIgnoreCase))
     {
+        if (atlasOutputs.Contains(Path.GetFileName(file))) { excludedAsAtlas++; continue; }
+
         string baseName = Path.GetFileNameWithoutExtension(file);
         string name = baseName;
         int k = 1;
@@ -188,7 +227,14 @@ static (AtlasBaker.AtlasBakeResult Result, string? Error) BuildAtlasFromFolder(
     }
 
     if (inputs.Count == 0)
-        return (null!, "该文件夹下没有可解码的图片（仅支持 png/jpg/gif/bmp/webp/tga）。");
+    {
+        // 图片其实存在、但全部是图集产物时，给出能看懂的提示，而不是笼统的「没有可解码的图片」
+        return excludedAsAtlas > 0
+            ? (null!, $"该文件夹里的 {excludedAsAtlas} 张图片都是图集页（已被描述文件声明为图集图片），没有可作为素材的小图。\n" +
+                      "请换一个装散图的文件夹，或先删掉旧的图集产物（*.atlas.txt / *.atlas.json 与其图集页）再打包。\n" +
+                      "文件夹：" + FullPathOf(inputFolder))
+            : (null!, "该文件夹下没有可解码的图片（仅支持 png/jpg/gif/bmp/webp/tga）。\n文件夹：" + FullPathOf(inputFolder));
+    }
 
     var result = AtlasBaker.Bake(inputs, null, settings, bakeOptions);
     return (result, null);
@@ -337,7 +383,7 @@ app.MapGet("/api/preview", (HttpContext ctx, string? inputFolder, string? output
     var atlasName = ResolveAtlasName(ctx.Request.Query["atlasName"], outGiven, inputFolder);
     var bakeOptions = new AtlasBakeOptions { BaseName = atlasName };
 
-    var (result, error) = BuildAtlasFromFolder(inputFolder ?? "", outGiven, settings, bakeOptions, atlasName);
+    var (result, error) = BuildAtlasFromFolder(inputFolder ?? "", outGiven, settings, bakeOptions);
     if (error is not null)
         return Results.Text(error, "text/plain; charset=utf-8", statusCode: 400);
 
@@ -372,7 +418,7 @@ app.MapGet("/api/pack", (HttpContext ctx, string? inputFolder, string? outputFol
     // 会和实际写出的 PNG（Map_0.png）对不上，导致下游/反解找不到图集图片。
     var bakeOptions = new AtlasBakeOptions { BaseName = atlasName };
 
-    var (result, error) = BuildAtlasFromFolder(inputFolder ?? "", outDir, settings, bakeOptions, atlasName);
+    var (result, error) = BuildAtlasFromFolder(inputFolder ?? "", outDir, settings, bakeOptions);
     if (error is not null)
         return Results.Text(error, "text/plain; charset=utf-8", statusCode: 400);
 
@@ -400,7 +446,7 @@ static List<(string Name, AtlasBaker.AtlasBakeResult Result, string? Error)> Bui
         // 每个子目录的图集名 = 目录名，必须同时作为 BaseName，
         // 保证描述文件里的 image 与写盘 PNG 名一致（否则会出现 "atlas_0.png" ↔ "Map_0.png" 对不上）
         var (result, error) = BuildAtlasFromFolder(sub, outputFolder, settings,
-            new AtlasBakeOptions { BaseName = name }, name);
+            new AtlasBakeOptions { BaseName = name });
         items.Add((name, result!, error));
     }
     return items;
@@ -410,7 +456,7 @@ static List<(string Name, AtlasBaker.AtlasBakeResult Result, string? Error)> Bui
 app.MapGet("/api/multi-preview", (string? rootFolder, int? maxSize, int? padding, string? algorithm, bool? allowRotation) =>
 {
     if (string.IsNullOrWhiteSpace(rootFolder) || !Directory.Exists(rootFolder))
-        return Results.Text("根目录不存在: " + (rootFolder ?? ""), "text/plain; charset=utf-8", statusCode: 400);
+        return Results.Text("根目录不存在：" + FullPathOf(rootFolder), "text/plain; charset=utf-8", statusCode: 400);
 
     var settings = new PackerSettings
     {
@@ -456,7 +502,7 @@ app.MapGet("/api/multi-preview", (string? rootFolder, int? maxSize, int? padding
 app.MapGet("/api/multi-pack", (string? rootFolder, string? outputFolder, int? maxSize, int? padding, string? algorithm, bool? allowRotation, string? format, string? suffix) =>
 {
     if (string.IsNullOrWhiteSpace(rootFolder) || !Directory.Exists(rootFolder))
-        return Results.Text("根目录不存在: " + (rootFolder ?? ""), "text/plain; charset=utf-8", statusCode: 400);
+        return Results.Text("根目录不存在：" + FullPathOf(rootFolder), "text/plain; charset=utf-8", statusCode: 400);
 
     var settings = new PackerSettings
     {
@@ -538,7 +584,7 @@ app.MapGet("/api/files", (string? path, string? filter) =>
         else
         {
             var dir = new DirectoryInfo(path);
-            if (!dir.Exists) return Results.Text("目录不存在: " + path, "text/plain; charset=utf-8", statusCode: 400);
+            if (!dir.Exists) return Results.Text("目录不存在：" + FullPathOf(path), "text/plain; charset=utf-8", statusCode: 400);
             current = dir.FullName;
             parent = dir.Parent?.FullName ?? "";
             dirs = dir.EnumerateDirectories().OrderBy(d => d.Name, StringComparer.OrdinalIgnoreCase).Select(d => d.FullName).ToList();
@@ -594,7 +640,7 @@ static string MakeThumb(byte[] spritePng, int thumbMax)
 app.MapGet("/api/unpack-preview", (HttpContext ctx, string? inputFolder, string? outputFolder, int? limit) =>
 {
     if (string.IsNullOrWhiteSpace(inputFolder) || !Directory.Exists(inputFolder))
-        return Results.Text("输入文件夹不存在: " + (inputFolder ?? ""), "text/plain; charset=utf-8", statusCode: 400);
+        return Results.Text("输入文件夹不存在：" + FullPathOf(inputFolder), "text/plain; charset=utf-8", statusCode: 400);
 
     try
     {
@@ -688,7 +734,7 @@ app.MapGet("/api/unpack-preview", (HttpContext ctx, string? inputFolder, string?
 app.MapGet("/api/unpack", (string? inputFolder, string? outputFolder, string? format) =>
 {
     if (string.IsNullOrWhiteSpace(inputFolder) || !Directory.Exists(inputFolder))
-        return Results.Text("输入文件夹不存在: " + (inputFolder ?? ""), "text/plain; charset=utf-8", statusCode: 400);
+        return Results.Text("输入文件夹不存在：" + FullPathOf(inputFolder), "text/plain; charset=utf-8", statusCode: 400);
 
     var fmt = string.Equals(format, "webp", StringComparison.OrdinalIgnoreCase)
         ? AtlasUnpacker.OutputFormat.Webp
@@ -701,7 +747,7 @@ app.MapGet("/api/unpack", (string? inputFolder, string? outputFolder, string? fo
 
         if (result.Atlases.Count == 0 && result.Failures.Count == 0)
         {
-            var msg = "在输入文件夹里没有发现任何图集（需要「图集图片 + 描述文件」成对存在）。";
+            var msg = "在输入文件夹里没有发现任何图集（需要「图集图片 + 描述文件」成对存在）。\n文件夹：" + FullPathOf(inputFolder);
             foreach (var w in result.Warnings) msg += "\n  ⚠ " + w;
             return Results.Text(msg, "text/plain; charset=utf-8", statusCode: 400);
         }

@@ -204,6 +204,7 @@ public static class AtlasFolderUnpacker
 
         string rel = pageImage.Replace('/', Path.DirectorySeparatorChar).Replace('\\', Path.DirectorySeparatorChar);
         string descDir = Path.GetDirectoryName(Path.GetFullPath(descriptionFile)) ?? "";
+        string descFull = Path.GetFullPath(descriptionFile);
 
         // 1) 绝对路径
         if (Path.IsPathRooted(rel) && File.Exists(rel)) return rel;
@@ -239,12 +240,12 @@ public static class AtlasFolderUnpacker
                 if (string.IsNullOrEmpty(ext)) continue;
                 string p = Path.Combine(descDir, stem + ext);
                 if (!File.Exists(p)) continue;
-                warnings?.Add($"“{Path.GetFileName(descriptionFile)}” 声明的图片是 “{pageImage}”，实际按 “{Path.GetFileName(p)}” 匹配（两者名字不一致）。");
+                warnings?.Add($"“{descFull}” 声明的图片是 “{pageImage}”，实际按 “{p}” 匹配（两者名字不一致）。");
                 return p;
             }
         }
 
-        warnings?.Add($"“{Path.GetFileName(descriptionFile)}”：描述里声明的图集图片 “{pageImage}” 找不到，已忽略。");
+        warnings?.Add($"“{descFull}”：描述里声明的图集图片 “{pageImage}” 找不到（同目录下也没有 “{descStem}_0” 这样的同名图集页），已忽略。");
         return null;
     }
 
