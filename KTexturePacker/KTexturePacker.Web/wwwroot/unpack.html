@@ -147,7 +147,7 @@
         <div class="pathfield">
           <label>输出文件夹（留空自动）</label>
           <div class="inputwrap">
-            <input id="outputFolder" type="text" placeholder="留空 = 输入目录同级 + .Atlas.UnPack" />
+            <input id="outputFolder" type="text" placeholder="留空 = 输入目录同级 + .UnPack" />
             <button class="browseBtn" id="browseOut" type="button">浏览…</button>
           </div>
         </div>
@@ -233,13 +233,13 @@
     function isFullPath(p) { return !!p && (/^[A-Za-z]:[\\/]/.test(p) || /^\\\\/.test(p)); }
     function joinPath(dir, name) { return dir ? dir.replace(/[\\/]+$/, '') + '\\' + name : name; }
 
-    // 默认输出文件夹 = 输入文件夹的同级目录，名字 = 输入目录名 + ".Atlas.UnPack"
+    // 默认输出文件夹 = 输入文件夹的同级目录，名字 = 输入目录名 + ".UnPack"
     function defaultOutputFolder(inputPath) {
       const dir = (inputPath || '').replace(/[\\/]+$/, '');
       const name = baseName(dir);
       const parent = pathDir(dir);
       if (!name || !parent) return '';
-      return joinPath(parent, name + '.Atlas.UnPack');
+      return joinPath(parent, name + '.UnPack');
     }
 
     function refreshButtons() {
@@ -414,6 +414,8 @@
         txt += '<br/>输出目录：<b>' + (j.outputFolder || '—') + '</b>' + (j.atlasCount > 1 ? '（多个图集各占一个子目录）' : '');
         txt += '<br/>输出格式：' + fmtLabel($('outFormat').value) + '，默认 PNG；旋转过的子图会自动逆时针 90° 还原。';
         if (failures.length) txt += '<br/><span style="color:#ff7b7b">失败 ' + failures.length + ' 项：' + failures.join('；') + '</span>';
+        const warns = j.warnings || [];
+        if (warns.length) txt += '<br/><span style="color:#ffb86b">提示 ' + warns.length + ' 条：' + warns.join('；') + '</span>';
         meta.innerHTML = txt;
 
         if (!silent) status('扫描完成（未写入磁盘）：' + j.atlasCount + ' 个图集 / ' + j.totalSprites + ' 张小图。', 'ok');

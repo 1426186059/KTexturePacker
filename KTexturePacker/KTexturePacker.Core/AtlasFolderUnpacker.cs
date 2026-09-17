@@ -47,6 +47,9 @@ public sealed class FolderUnpackResult
     /// <summary>识别失败 / 反解失败的图集及其原因。</summary>
     public List<string> Failures { get; } = new();
 
+    /// <summary>被跳过的可疑描述文件及原因（如描述里声明的图集图片找不到）。</summary>
+    public List<string> Warnings { get; } = new();
+
     /// <summary>本次共拆出的小图数量。</summary>
     public int SpriteCount => Atlases.Sum(a => a.Sprites.Count);
 
@@ -65,31 +68,20 @@ public sealed class FolderUnpackResult
 /// </summary>
 public static class AtlasFolderUnpacker
 {
-    /// <summary>输出目录后缀。</summary>
-    public const string OutputSuffix = ".Atlas.UnPack";
+    /// <summary>输出目录后缀（= <see cref="AtlasConst.UnpackOutputSuffix"/>）。</summary>
+    public const string OutputSuffix = AtlasConst.UnpackOutputSuffix;
 
     /// <summary>
-    /// 默认输出目录：输入文件夹的<b>同级目录</b>，名字为「输入目录名 + .Atlas.UnPack」。
-    /// 例：输入 <c>D:\out\hero</c> → 输出 <c>D:\out\hero.Atlas.UnPack</c>。
+    /// 默认输出目录：输入文件夹的<b>同级目录</b>，名字为「输入目录名 + .UnPack」。
+    /// 例：输入 <c>D:\out\hero</c> → 输出 <c>D:\out\hero.UnPack</c>。
     /// </summary>
-    public static string DefaultOutputFolder(string inputFolder)
-    {
-        string full = Path.GetFullPath((inputFolder ?? "").Trim().TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
-        var di = new DirectoryInfo(full);
-        string name = di.Name;
-        // 盘根目录（如 D:\）没有目录名，退回盘符卷名
-        if (string.IsNullOrEmpty(name)) name = full.Replace(":", "").Trim(Path.DirectorySeparatorChar);
-        if (string.IsNullOrEmpty(name)) name = "UnPack";
-
-        string parent = di.Parent?.FullName ?? "";
-        if (string.IsNullOrEmpty(parent)) parent = full;
-        return Path.Combine(parent, name + OutputSuffix);
-    }
+    public static string DefaultOutputFolder(string inputFolder) => AtlasConst.DefaultUnpackOutputFolder(inputFolder);
 
     /// <summary>
     /// 遍历文件夹，找出其中所有「图集」。<paramref name="recursive"/> 为 true 时一并遍历子目录。
+    /// 找不到的可疑描述文件（例如声明的图片不存在）会写入 <paramref name="warnings"/>。
     /// </summary>
-    public static List<AtlasSource> Discover(string inputFolder, bool recursive = true)
+    public static List<AtlasSource> Discover(string inputFolder, bool recursive = true, List<string>? warnings = null)
     {
         if (!Directory.Exists(inputFolder))
             throw new DirectoryNotFoundException("输入文件夹不存在: " + inputFolder);
@@ -119,7 +111,7 @@ public static class AtlasFolderUnpacker
             for (int i = 0; i < data.Pages.Count; i++)
             {
                 var page = data.Pages[i];
-                string? img = ResolveImageFile(page.Image, desc, files);
+                string? img = ResolveImageFile(page.Image, desc, files, warnings);
                 if (img is null) continue;              // 描述里声明的图片不在 → 忽略这一页
                 if (!seenImages.Add(img)) continue;      // 同一张图集不重复处理
 
@@ -158,14 +150,15 @@ public static class AtlasFolderUnpacker
             throw new DirectoryNotFoundException("输入文件夹不存在: " + inputFolder);
 
         string outDir = string.IsNullOrWhiteSpace(outputFolder) ? DefaultOutputFolder(inputFolder) : outputFolder;
-        var sources = Discover(inputFolder, recursive);
+        var warnings = new List<string>();
+        var sources = Discover(inputFolder, recursive, warnings);
 
         var result = new FolderUnpackResult { InputFolder = inputFolder, OutputFolder = outDir };
         if (sources.Count == 0) return result;
 
+        result.Warnings.AddRange(warnings);
         bool multi = sources.Count > 1;
         if (!Directory.Exists(outDir)) Directory.CreateDirectory(outDir);
-
         foreach (var src in sources)
         {
             try
@@ -198,25 +191,61 @@ public static class AtlasFolderUnpacker
         return ext is ".json" or ".txt" or ".atlas" || file.EndsWith(".atlas.txt", StringComparison.OrdinalIgnoreCase);
     }
 
-    /// <summary>把描述里声明的 image（可能带相对目录）定位到磁盘上的真实文件。</summary>
-    private static string? ResolveImageFile(string? pageImage, string descriptionFile, List<string> allFiles)
+    /// <summary>图集图片可能的扩展名（描述里写的后缀与实际文件不一致时依次尝试）。</summary>
+    private static readonly string[] ImageExtensions = { ".png", ".webp", ".jpg", ".jpeg", ".bmp", ".gif", ".tga" };
+
+    /// <summary>
+    /// 把描述里声明的 image（可能带相对目录）定位到磁盘上的真实文件。
+    /// 找不到时返回 null 并写入一条 warning —— 绝不跨目录乱配图片，避免拆出错误内容。
+    /// </summary>
+    private static string? ResolveImageFile(string? pageImage, string descriptionFile, List<string> allFiles, List<string>? warnings)
     {
         if (string.IsNullOrWhiteSpace(pageImage)) return null;
 
         string rel = pageImage.Replace('/', Path.DirectorySeparatorChar).Replace('\\', Path.DirectorySeparatorChar);
         string descDir = Path.GetDirectoryName(Path.GetFullPath(descriptionFile)) ?? "";
+
+        // 1) 绝对路径
         if (Path.IsPathRooted(rel) && File.Exists(rel)) return rel;
 
-        string candidate = Path.Combine(descDir, Path.GetFileName(rel));
-        if (File.Exists(candidate)) return candidate;
+        // 2) 描述文件同目录下的同名文件（大小写不敏感）
+        var inDir = allFiles.Where(f => string.Equals(Path.GetDirectoryName(Path.GetFullPath(f)), descDir, StringComparison.OrdinalIgnoreCase));
+        var hit = inDir.FirstOrDefault(f => string.Equals(Path.GetFileName(f), Path.GetFileName(rel), StringComparison.OrdinalIgnoreCase));
+        if (hit is not null) return hit;
 
-        // 描述里的 image 带了相对子目录的情况
+        // 3) image 带了相对子目录
         string withRel = Path.GetFullPath(Path.Combine(descDir, rel.TrimStart(Path.DirectorySeparatorChar)));
         if (File.Exists(withRel)) return withRel;
 
-        // 兜底：在整个遍历结果里按文件名找（大小写不敏感）
-        return allFiles.FirstOrDefault(f =>
-            string.Equals(Path.GetFileName(f), Path.GetFileName(rel), StringComparison.OrdinalIgnoreCase));
+        // 4) 描述文件名与图集图片名不一致时的兜底：
+        //    例 Map.atlas.txt 里写 "image":"atlas_0.png"，而实际文件叫 Map_0.png
+        //    → 用「描述文件名 + 图片名的数字后缀」在描述所在目录匹配
+        string declaredExt = Path.GetExtension(rel);
+        string declaredStem = Path.GetFileNameWithoutExtension(rel);
+        int d = declaredStem.Length;
+        while (d > 0 && declaredStem[d - 1] >= '0' && declaredStem[d - 1] <= '9') d--;
+        string digits = d < declaredStem.Length ? declaredStem[d..] : "";   // "0" / "12" / ""
+        string descStem = KeyOfDescription(descriptionFile);
+
+        var candidates = new List<string>();
+        if (digits.Length > 0) candidates.Add(descStem + "_" + digits);
+        candidates.Add(descStem + digits);
+        candidates.Add(descStem);
+
+        foreach (var stem in candidates)
+        {
+            foreach (var ext in new[] { declaredExt }.Concat(ImageExtensions))
+            {
+                if (string.IsNullOrEmpty(ext)) continue;
+                string p = Path.Combine(descDir, stem + ext);
+                if (!File.Exists(p)) continue;
+                warnings?.Add($"“{Path.GetFileName(descriptionFile)}” 声明的图片是 “{pageImage}”，实际按 “{Path.GetFileName(p)}” 匹配（两者名字不一致）。");
+                return p;
+            }
+        }
+
+        warnings?.Add($"“{Path.GetFileName(descriptionFile)}”：描述里声明的图集图片 “{pageImage}” 找不到，已忽略。");
+        return null;
     }
 
     /// <summary>描述文件名 → 输出子目录名（去掉 .atlas / .json / .txt 等所有扩展名）。</summary>

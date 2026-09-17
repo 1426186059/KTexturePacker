@@ -35,6 +35,8 @@
 - **先预览后打包**：预览只生成分页缩略图、不写盘，确认效果后再落盘。
 - **便捷输入**：输入框支持拖拽文件夹自动识别路径，也可用内置「浏览…」目录选择器逐级选择。
 - **命名灵活**：图集名字可手动指定，留空则默认取文件夹名。
+- **默认输出目录**：留空时为「输入文件夹的同级目录 + 输入目录名 + `.Pack`」（例：`D:\art\hero` → `D:\art\hero.Pack`）。多文件夹模式同理，取根目录名。
+- **名字始终自洽**：描述文件里的 `image` 与实际写出的 PNG 文件名**永远一致**（都取自图集名），不会出现 `image":"atlas_0.png"` 而文件叫 `Map_0.png` 的情况。
 
 ### 二、多文件夹处理（TexturePacker 没有的能力）
 
@@ -48,6 +50,7 @@
 - **逐项结果报告**：打包完成逐个子图集报告结果与输出路径。
 - **互不影响**：某个子文件夹无图片或图片放不下时单独标记失败，**不影响其他子图集的打包**。
 - **输出干净**：所有子图集平铺输出到同一个输出文件夹（`hero_0.png` / `hero.atlas.txt`、`npc_0.png` / `npc.atlas.txt`…），目录层级一目了然。
+- **默认输出目录同单文件夹规则**：留空时为根目录的同级目录 + 根目录名 `.Pack`。
 
 ### 三、图集反解（已发布图集 → 拆回小图）
 
@@ -56,7 +59,8 @@
 - **自动识别图集**：逐个尝试候选描述文件（`*.json` / `*.txt` / `*.atlas*`），能按通用格式或 PixiJS v8 解析出 pages / frames、且 `image` 指向的图片真实存在，才算一个图集。一张孤立的图片、普通文本、非图集 JSON 都会自动跳过。
 - **多页图集**：一个多页描述文件会拆出多个图集（`npc` / `npc_1` …），各自独立输出，互不覆盖。
 - **旋转自动还原**：打包时顺时针 90° 存放的旋转子图，反解时按逆时针 90° 还原回原始朝向（尺寸取 `sourceW`/`sourceH`）。
-- **默认输出目录**：`<输入文件夹的同级目录>\<输入目录名>.Atlas.UnPack`，例：`D:\out\atlases` → `D:\out\atlases.Atlas.UnPack`。只有**一个**图集时小图直接放在该目录；有多个图集时按描述文件名各建一个子目录。
+- **默认输出目录**：`<输入文件夹的同级目录>\<输入目录名>.UnPack`，例：`D:\out\atlases` → `D:\out\atlases.UnPack`。只有**一个**图集时小图直接放在该目录；有多个图集时按描述文件名各建一个子目录。
+- **名字不一致也能拆**：若描述里的 `image` 与实际图集文件名对不上（老产物里写 `atlas_0.png`、文件叫 `Map_0.png`），会按「描述文件名 + 页序号」自动匹配并给出⚠提示，不会误配到别的图集上。
 - **先预览后落盘**：预览按图集分组列出所有小图缩略图与元信息（不写盘），确认后一键全部拆出。
 - **默认输出 PNG**：小图默认 `.png`，需要时可在页面切换成 `.webp`（Core 的 `AtlasUnpacker.OutputFormat` 同时支持两种）。
 - **文件名安全**：子图名中的非法字符会被清洗，重名自动追加序号，保证每张都能成功写盘。
@@ -147,9 +151,9 @@ dotnet publish -c Release -r win-x64 KTexturePacker.Web/KTexturePacker.Web.cspro
 |------|------|------|
 | GET | `/api/dirs?path=<路径>` | 列出磁盘目录（前端「浏览…」选择器用）。 |
 | GET | `/api/preview?inputFolder=&outputFolder=&maxSize=&padding=&algorithm=&allowRotation=&atlasName=` | 单文件夹预览，返回分页缩略图 JSON（不写盘）。 |
-| GET | `/api/pack?inputFolder=&outputFolder=&maxSize=&padding=&algorithm=&allowRotation=&atlasName=&format=&suffix=` | 单文件夹打包，写入磁盘。 |
+| GET | `/api/pack?inputFolder=&outputFolder=&maxSize=&padding=&algorithm=&allowRotation=&atlasName=&format=&suffix=` | 单文件夹打包，写入磁盘（`outputFolder` 留空 → 同级目录 `<输入目录名>.Pack`）。 |
 | GET | `/api/multi-preview?rootFolder=&maxSize=&padding=&algorithm=&allowRotation=` | 多文件夹预览，返回每个子图集的缩略图与状态 JSON。 |
-| GET | `/api/multi-pack?rootFolder=&outputFolder=&maxSize=&padding=&algorithm=&allowRotation=&format=&suffix=` | 多文件夹打包，逐个子图集写入磁盘。 |
+| GET | `/api/multi-pack?rootFolder=&outputFolder=&maxSize=&padding=&algorithm=&allowRotation=&format=&suffix=` | 多文件夹打包，逐个子图集写入磁盘（`outputFolder` 留空 → 同级目录 `<根目录名>.Pack`）。 |
 | GET | `/api/files?path=<路径>&filter=<扩展名列表>` | 列出目录 + 符合条件的文件（`filter` 为逗号分隔扩展名，如 `png,webp` / `txt,json`），前端目录/文件选择器用。 |
 | GET | `/api/unpack-preview?inputFolder=<文件夹>&outputFolder=&limit=<预览上限>` | 遍历文件夹找出所有图集，按图集分组返回小图缩略图与元信息（不写盘）。 |
 | GET | `/api/unpack?inputFolder=<文件夹>&outputFolder=&format=png\|webp` | 遍历文件夹反解所有图集并写盘；`outputFolder` 留空用默认目录，`format` 留空即默认 `png`。 |
@@ -167,7 +171,7 @@ dotnet publish -c Release -r win-x64 KTexturePacker.Web/KTexturePacker.Web.cspro
 
 **响应（预览，多文件夹）**：JSON `{ items:[{name,error} | {name,pages,count,realPages}], okCount, failCount, totalPages, totalSprites, totalUnplaced }`。
 
-**响应（图集反解预览）**：JSON `{ inputFolder, outputFolder, atlasCount, totalSprites, totalShown, totalSkipped, failures[], atlases:[{key,image,imagePath,desc,pageIndex,page:{w,h},fromPixiJs,total,shown,skipped,sprites:[{name,file,w,h,x,y,rotated,png}]}] }`，`png` 为最长边 ≤ 128px 的缩略图。
+**响应（图集反解预览）**：JSON `{ inputFolder, outputFolder, atlasCount, totalSprites, totalShown, totalSkipped, failures[], warnings[], atlases:[{key,image,imagePath,desc,pageIndex,page:{w,h},fromPixiJs,total,shown,skipped,sprites:[{name,file,w,h,x,y,rotated,png}]}] }`，`png` 为最长边 ≤ 128px 的缩略图。
 
 **响应头（反解预览）**：`X-Atlas-Count`（识别到的图集数）、`X-Sprite-Total`（小图总数）、`X-Skip-Count`（跳过数）。
 

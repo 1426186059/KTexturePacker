@@ -203,6 +203,16 @@ public static class AtlasUnpacker
                 if (string.Equals(imgName, full, StringComparison.OrdinalIgnoreCase)) return p;
                 if (string.Equals(Path.GetFileNameWithoutExtension(imgName), stem, StringComparison.OrdinalIgnoreCase)) return p;
             }
+
+            // 兜底：描述里的 image 名与实际图集文件名不一致时（如 image="atlas_0.png" 而文件是 Map_0.png），
+            // 按图片名末尾的页序号取页，避免明明只差个前缀却整本图集被跳过。
+            int d = stem.Length;
+            while (d > 0 && stem[d - 1] >= '0' && stem[d - 1] <= '9') d--;
+            if (d < stem.Length && int.TryParse(stem[d..], out int index) && index >= 0 && index < data.Pages.Count)
+                return data.Pages[index];
+
+            // 只有一页时，名字再不一致也只能是它
+            if (data.Pages.Count == 1) return data.Pages[0];
             return null;
         }
         return data.Pages.Count == 1 ? data.Pages[0] : null;

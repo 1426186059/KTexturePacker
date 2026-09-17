@@ -101,6 +101,27 @@ static bool IsToolOutput(string name)
     return System.Text.RegularExpressions.Regex.IsMatch(name, @"^atlas_\d+\.(png|webp)$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 }
 
+// 判断某图片是否就是「本次即将写出的图集页」：<图集名>.png / <图集名>_0.png …
+// 仅在「输出目录 = 输入目录」时用于排除上一轮产物（避免把即将被覆盖的旧图集再喂进去）。
+static bool IsThisRunOutput(string name, string? atlasName)
+{
+    if (string.IsNullOrWhiteSpace(atlasName)) return false;
+    string stem = Path.GetFileNameWithoutExtension(name);
+    string ext = Path.GetExtension(name).ToLowerInvariant();
+    if (ext is not (".png" or ".webp")) return false;
+    if (stem.Equals(atlasName, StringComparison.OrdinalIgnoreCase)) return true;
+    if (!stem.StartsWith(atlasName + "_", StringComparison.OrdinalIgnoreCase)) return false;
+    string tail = stem[(atlasName.Length + 1)..];
+    return tail.Length > 0 && tail.All(char.IsDigit);
+}
+
+static bool SameDirectory(string? a, string? b)
+{
+    if (string.IsNullOrWhiteSpace(a) || string.IsNullOrWhiteSpace(b)) return false;
+    static string Norm(string p) => Path.GetFullPath(p).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+    return string.Equals(Norm(a), Norm(b), StringComparison.OrdinalIgnoreCase);
+}
+
 // 清理图集名字中的文件系统非法字符，避免写盘失败。
 static string SanitizeAtlasName(string name)
 {
@@ -137,17 +158,23 @@ static string ResolveAtlasName(string? given, string? outputFolder, string? inpu
 
 // 从文件夹读图，交给共享核心 KTexturePacker.Core.AtlasBaker 完成「装箱 + 合成 + 编码 + 导出」，
 // 返回统一的 AtlasBakeResult（每页图像字节 + 通用格式 AtlasData JSON + 用于 PixiJS 的 AutoPages）。
+// atlasName：本次图集名（同时决定描述文件里的 image 字段与写盘的 PNG 文件名，两者必须一致）。
+// 输出目录与输入目录相同时，额外排除本次即将覆盖的旧图集页，避免旧产物被再次喂入。
 static (AtlasBaker.AtlasBakeResult Result, string? Error) BuildAtlasFromFolder(
-    string inputFolder, string? outputFolder, PackerSettings settings, AtlasBakeOptions bakeOptions)
+    string inputFolder, string? outputFolder, PackerSettings settings, AtlasBakeOptions bakeOptions, string? atlasName = null)
 {
     if (string.IsNullOrWhiteSpace(inputFolder) || !Directory.Exists(inputFolder))
         return (null!, "输入文件夹不存在: " + (inputFolder ?? ""));
     if (string.IsNullOrWhiteSpace(outputFolder)) outputFolder = inputFolder;
 
+    bool excludeOwn = SameDirectory(inputFolder, outputFolder);
+
     var inputs = new List<SpriteInput>();
     var names = new List<string>();
     foreach (var file in Directory.EnumerateFiles(inputFolder)
-                 .Where(f => IsImageFile(f) && !IsToolOutput(Path.GetFileName(f)))
+                 .Where(f => IsImageFile(f)
+                             && !IsToolOutput(Path.GetFileName(f))
+                             && !(excludeOwn && IsThisRunOutput(Path.GetFileName(f), atlasName)))
                  .OrderBy(f => f, StringComparer.OrdinalIgnoreCase))
     {
         string baseName = Path.GetFileNameWithoutExtension(file);
@@ -304,14 +331,19 @@ app.MapGet("/api/preview", (HttpContext ctx, string? inputFolder, string? output
         AllowRotation = allowRotation ?? false,
         Algorithm = ParseAlgorithm(algorithm),
     };
-    var bakeOptions = new AtlasBakeOptions();
+    // 输出目录留空时的默认：输入文件夹的同级目录 + 输入目录名 + ".Pack"
+    // （注意：此时不让它参与图集名推导，否则图集名会变成 "xxx.Pack"）
+    string? outGiven = string.IsNullOrWhiteSpace(outputFolder) ? null : outputFolder;
+    var atlasName = ResolveAtlasName(ctx.Request.Query["atlasName"], outGiven, inputFolder);
+    var bakeOptions = new AtlasBakeOptions { BaseName = atlasName };
 
-    var (result, error) = BuildAtlasFromFolder(inputFolder ?? "", outputFolder, settings, bakeOptions);
+    var (result, error) = BuildAtlasFromFolder(inputFolder ?? "", outGiven, settings, bakeOptions, atlasName);
     if (error is not null)
         return Results.Text(error, "text/plain; charset=utf-8", statusCode: 400);
 
     SetMetaHeaders(ctx, result.AutoPages);
-    ctx.Response.Headers["X-Atlas-Name"] = ResolveAtlasName(ctx.Request.Query["atlasName"], outputFolder, inputFolder);
+    ctx.Response.Headers["X-Atlas-Name"] = atlasName;
+    ctx.Response.Headers["X-Output-Folder"] = outGiven ?? AtlasConst.DefaultPackOutputFolder(inputFolder ?? "");
     const int previewMax = 512; // 预览最大边长固定写死，不再由前端传参
     var json = RenderPreviewPages(result, previewMax);
     return Results.Text(json.ToJsonString(), "application/json; charset=utf-8");
@@ -327,11 +359,20 @@ app.MapGet("/api/pack", (HttpContext ctx, string? inputFolder, string? outputFol
         AllowRotation = allowRotation ?? false,
         Algorithm = ParseAlgorithm(algorithm),
     };
-    var bakeOptions = new AtlasBakeOptions();
     var fmt = ParseFormat(format);
     var descSuffix = ParseSuffix(suffix, fmt);
 
-    var (result, error) = BuildAtlasFromFolder(inputFolder ?? "", outputFolder, settings, bakeOptions);
+    // 输出目录留空 → 输入文件夹的同级目录 + 输入目录名 + ".Pack"；
+    // 此时不参与图集名推导，图集名仍取输入目录名（或用户指定值）。
+    string? outGiven = string.IsNullOrWhiteSpace(outputFolder) ? null : outputFolder;
+    string outDir = outGiven ?? AtlasConst.DefaultPackOutputFolder(inputFolder ?? "");
+    var atlasName = ResolveAtlasName(ctx.Request.Query["atlasName"], outGiven, inputFolder);
+
+    // 关键：BaseName 必须等于图集名，否则描述文件里的 image（atlas_0.png）
+    // 会和实际写出的 PNG（Map_0.png）对不上，导致下游/反解找不到图集图片。
+    var bakeOptions = new AtlasBakeOptions { BaseName = atlasName };
+
+    var (result, error) = BuildAtlasFromFolder(inputFolder ?? "", outDir, settings, bakeOptions, atlasName);
     if (error is not null)
         return Results.Text(error, "text/plain; charset=utf-8", statusCode: 400);
 
@@ -339,9 +380,8 @@ app.MapGet("/api/pack", (HttpContext ctx, string? inputFolder, string? outputFol
     if (unplaced > 0)
         return Results.Text($"有 {unplaced} 张图片无法放入（可能单张超过最大边长），请调大 maxSize 或拆分。", "text/plain; charset=utf-8", statusCode: 400);
 
-    var atlasName = ResolveAtlasName(ctx.Request.Query["atlasName"], outputFolder, inputFolder);
-    var atlasPath = WriteAtlasToDisk(result, outputFolder!, atlasName, fmt, descSuffix);
-    return Results.Text("已生成图集：" + atlasPath + "（" + result.Pages.Count + " 页，前缀 " + atlasName + "）", "text/plain; charset=utf-8");
+    var atlasPath = WriteAtlasToDisk(result, outDir, atlasName, fmt, descSuffix);
+    return Results.Text("已生成图集：" + atlasPath + "（" + result.Pages.Count + " 页，前缀 " + atlasName + "）\n输出目录：" + outDir, "text/plain; charset=utf-8");
 });
 
 // ---------- 多文件夹模式：根目录下每个子目录 = 一个独立图集 ----------
@@ -349,7 +389,7 @@ app.MapGet("/api/pack", (HttpContext ctx, string? inputFolder, string? outputFol
 // 枚举根目录下所有子目录，逐个构建图集。
 // 每项 (Name, Result, Error)：Error 为 null 时 Result 有效，调用方负责处理。
 static List<(string Name, AtlasBaker.AtlasBakeResult Result, string? Error)> BuildAllSubAtlases(
-    string rootFolder, PackerSettings settings, AtlasBakeOptions bakeOptions)
+    string rootFolder, PackerSettings settings, string? outputFolder = null)
 {
     var items = new List<(string, AtlasBaker.AtlasBakeResult, string?)>();
     foreach (var sub in Directory.EnumerateDirectories(rootFolder)
@@ -357,7 +397,10 @@ static List<(string Name, AtlasBaker.AtlasBakeResult Result, string? Error)> Bui
     {
         var name = SanitizeAtlasName(new DirectoryInfo(sub).Name);
         if (string.IsNullOrEmpty(name)) name = "atlas";
-        var (result, error) = BuildAtlasFromFolder(sub, null, settings, bakeOptions);
+        // 每个子目录的图集名 = 目录名，必须同时作为 BaseName，
+        // 保证描述文件里的 image 与写盘 PNG 名一致（否则会出现 "atlas_0.png" ↔ "Map_0.png" 对不上）
+        var (result, error) = BuildAtlasFromFolder(sub, outputFolder, settings,
+            new AtlasBakeOptions { BaseName = name }, name);
         items.Add((name, result!, error));
     }
     return items;
@@ -376,12 +419,10 @@ app.MapGet("/api/multi-preview", (string? rootFolder, int? maxSize, int? padding
         AllowRotation = allowRotation ?? false,
         Algorithm = ParseAlgorithm(algorithm),
     };
-    var bakeOptions = new AtlasBakeOptions();
-
     var items = new JsonArray();
     int okCount = 0, failCount = 0, totalSprites = 0, totalUnplaced = 0, totalPages = 0;
     const int previewMax = 512; // 与单文件夹模式一致：预览最长边固定
-    foreach (var (name, result, error) in BuildAllSubAtlases(rootFolder, settings, bakeOptions))
+    foreach (var (name, result, error) in BuildAllSubAtlases(rootFolder, settings))
     {
         if (error is not null)
         {
@@ -416,8 +457,6 @@ app.MapGet("/api/multi-pack", (string? rootFolder, string? outputFolder, int? ma
 {
     if (string.IsNullOrWhiteSpace(rootFolder) || !Directory.Exists(rootFolder))
         return Results.Text("根目录不存在: " + (rootFolder ?? ""), "text/plain; charset=utf-8", statusCode: 400);
-    if (string.IsNullOrWhiteSpace(outputFolder))
-        return Results.Text("请填写输出文件夹。", "text/plain; charset=utf-8", statusCode: 400);
 
     var settings = new PackerSettings
     {
@@ -426,13 +465,17 @@ app.MapGet("/api/multi-pack", (string? rootFolder, string? outputFolder, int? ma
         AllowRotation = allowRotation ?? false,
         Algorithm = ParseAlgorithm(algorithm),
     };
-    var bakeOptions = new AtlasBakeOptions();
     var fmt = ParseFormat(format);
     var descSuffix = ParseSuffix(suffix, fmt);
 
+    // 输出目录留空 → 根目录的同级目录 + 根目录名 + ".Pack"（与单文件夹模式规则一致）
+    string outDir = string.IsNullOrWhiteSpace(outputFolder)
+        ? AtlasConst.DefaultPackOutputFolder(rootFolder)
+        : outputFolder;
+
     int ok = 0, fail = 0;
     var sb = new System.Text.StringBuilder();
-    foreach (var (name, result, error) in BuildAllSubAtlases(rootFolder, settings, bakeOptions))
+    foreach (var (name, result, error) in BuildAllSubAtlases(rootFolder, settings, outDir))
     {
         if (error is not null)
         {
@@ -447,13 +490,14 @@ app.MapGet("/api/multi-pack", (string? rootFolder, string? outputFolder, int? ma
             sb.AppendLine("✗ " + name + "：有 " + unplaced + " 张图片无法放入（可能单张超过最大边长），请调大 maxSize 或允许旋转。");
             continue;
         }
-        var atlasPath = WriteAtlasToDisk(result, outputFolder, name, fmt, descSuffix);
+        var atlasPath = WriteAtlasToDisk(result, outDir, name, fmt, descSuffix);
         ok++;
         sb.AppendLine("✓ " + name + "：" + result.Pages.Count + " 页 → " + atlasPath);
     }
 
     var head = ok == 0 ? "全部失败：" : fail == 0 ? "全部完成：" : "完成（部分失败）：";
-    return Results.Text(head + "\n" + sb, "text/plain; charset=utf-8", statusCode: ok == 0 ? 400 : 200);
+    var msg = head + "\n" + sb + "输出目录：" + outDir;
+    return Results.Text(msg, "text/plain; charset=utf-8", statusCode: ok == 0 ? 400 : 200);
 });
 
 // ---------- 图集反解（单张图集 → 拆成一个个小图） ----------
@@ -558,7 +602,8 @@ app.MapGet("/api/unpack-preview", (HttpContext ctx, string? inputFolder, string?
             ? AtlasFolderUnpacker.DefaultOutputFolder(inputFolder)
             : outputFolder;
 
-        var sources = AtlasFolderUnpacker.Discover(inputFolder);
+        var warnings = new List<string>();
+        var sources = AtlasFolderUnpacker.Discover(inputFolder, true, warnings);
         const int thumbMax = 128;                        // 缩略图最长边固定，控制响应体大小
         int budget = Math.Clamp(limit ?? 200, 1, 5000);  // 全部图集合计最多返回多少张缩略图
 
@@ -625,6 +670,7 @@ app.MapGet("/api/unpack-preview", (HttpContext ctx, string? inputFolder, string?
             ["totalSkipped"] = totalSkipped,
             ["atlases"] = atlasArr,
             ["failures"] = failures,
+            ["warnings"] = new JsonArray(warnings.Select(w => (JsonNode)w).ToArray()),
         };
 
         ctx.Response.Headers["X-Atlas-Count"] = sources.Count.ToString();
@@ -654,7 +700,11 @@ app.MapGet("/api/unpack", (string? inputFolder, string? outputFolder, string? fo
         string ext = AtlasUnpacker.ExtOf(fmt);
 
         if (result.Atlases.Count == 0 && result.Failures.Count == 0)
-            return Results.Text("在输入文件夹里没有发现任何图集（需要「图集图片 + 描述文件」成对存在）。", "text/plain; charset=utf-8", statusCode: 400);
+        {
+            var msg = "在输入文件夹里没有发现任何图集（需要「图集图片 + 描述文件」成对存在）。";
+            foreach (var w in result.Warnings) msg += "\n  ⚠ " + w;
+            return Results.Text(msg, "text/plain; charset=utf-8", statusCode: 400);
+        }
 
         var sb = new System.Text.StringBuilder();
         sb.AppendLine("✓ 共识别出 " + result.Atlases.Count + " 个图集，拆出 " + result.SpriteCount + " 张小图（" + ext + "）");
@@ -663,6 +713,8 @@ app.MapGet("/api/unpack", (string? inputFolder, string? outputFolder, string? fo
             sb.AppendLine("  ✓ " + a.Key + "：" + a.Sprites.Count + " 张 → " + a.OutputFolder);
         foreach (var f in result.Failures)
             sb.AppendLine("  ✗ " + f);
+        foreach (var w in result.Warnings)
+            sb.AppendLine("  ⚠ " + w);
         if (result.SkippedCount > 0)
             sb.AppendLine("⚠ 有 " + result.SkippedCount + " 个区域越界或尺寸非法，已跳过。");
 

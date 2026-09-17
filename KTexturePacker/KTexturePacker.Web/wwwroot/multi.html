@@ -151,7 +151,7 @@
         <div class="pathfield">
           <label>输出文件夹（每个子图集输出到这里，前缀 = 子文件夹名）</label>
           <div class="inputwrap">
-            <input id="outputFolder" type="text" placeholder="留空则默认 = 根目录的父目录" />
+            <input id="outputFolder" type="text" placeholder="留空则默认 = 根目录同级 + 根目录名.Pack" />
             <button class="browseBtn" id="browseOutput" type="button">浏览…</button>
           </div>
         </div>
@@ -293,11 +293,14 @@
       if (!p) return false;
       return /^[A-Za-z]:[\\/]/.test(p) || /^\\\\/.test(p);
     }
+    // 默认输出文件夹 = 根目录的同级目录，名字 = 根目录名 + ".Pack"
     function autoInitOutputFolder(srcPath) {
       if (outInitialized) return;
-      const parent = pathDir((srcPath || '').trim());
-      if (!parent) return;
-      document.getElementById('outputFolder').value = parent;
+      const dir = (srcPath || '').trim().replace(/[\\/]+$/, '');
+      const name = baseName(dir);
+      const parent = pathDir(dir);
+      if (!name || !parent) return;
+      document.getElementById('outputFolder').value = parent.replace(/[\\/]+$/, '') + '\\' + name + '.Pack';
       outInitialized = true;
     }
 
@@ -484,7 +487,6 @@
       const root = document.getElementById('rootFolder').value.trim();
       const out = document.getElementById('outputFolder').value.trim();
       if (!root) return;
-      if (!out) { status('请填写输出文件夹。', 'err'); return; }
       packBtn.disabled = true; status('打包中…', '');
       try {
         const p = new URLSearchParams({ rootFolder: root, outputFolder: out, maxSize: document.getElementById('maxSize').value,
